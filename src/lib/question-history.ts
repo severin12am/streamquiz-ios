@@ -1,6 +1,8 @@
+/** Topic → recent question texts in AsyncStorage; sent to API to avoid repeats on rematch/create. */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const PREFIX = 'streamquiz-question-history:';
+const PREFIX = 'whosmarter-recent-questions:';
+const LEGACY_PREFIX = 'streamquiz-question-history:';
 const MAX = 24;
 
 function key(topic: string): string {
@@ -8,7 +10,11 @@ function key(topic: string): string {
 }
 
 export async function getPreviousQuestions(topic: string): Promise<string[]> {
-  const raw = await AsyncStorage.getItem(key(topic));
+  let raw = await AsyncStorage.getItem(key(topic));
+  if (!raw) {
+    raw = await AsyncStorage.getItem(`${LEGACY_PREFIX}${topic.trim().toLowerCase()}`);
+    if (raw) await AsyncStorage.setItem(key(topic), raw);
+  }
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as string[];

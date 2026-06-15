@@ -1,3 +1,8 @@
+/**
+ * Host create form — simplified home: topic + Create, then Adjust for settings.
+ * Defaults: medium, MC on, cameras on, first-answer mode (`classic` in DB).
+ * Colors: theme.ts (matches web globals.css lagoon palette).
+ */
 import React, { useState } from 'react';
 import {
   View,
@@ -5,17 +10,17 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  ScrollView,
   ActivityIndicator,
   Switch,
 } from 'react-native';
 import type { TranslateFn } from '@/lib/i18n';
-import type { Difficulty, GameMode, Locale } from '@/lib/types';
+import type { Difficulty, GameMode } from '@/lib/types';
+import { playSound } from '@/lib/sounds';
+import { KeycapSegSlider } from '@/components/KeycapSegSlider';
+import { KeycapButton } from '@/components/KeycapButton';
 import { colors } from '@/theme';
 
 interface Props {
-  locale: Locale;
-  onLocaleChange: (locale: Locale) => void;
   onCreate: (params: {
     topic: string;
     difficulty: Difficulty;
@@ -27,19 +32,21 @@ interface Props {
   t: TranslateFn;
 }
 
-export function CreateGame({ locale, onLocaleChange, onCreate, t }: Props) {
+export function CreateGame({ onCreate, t }: Props) {
   const [topic, setTopic] = useState('');
+  const [showAdjust, setShowAdjust] = useState(false);
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [numQuestions, setNumQuestions] = useState(5);
-  const [mcMode, setMcMode] = useState(false);
-  const [gameMode, setGameMode] = useState<GameMode>('think');
-  const [camerasEnabled, setCamerasEnabled] = useState(false);
+  const [mcMode, setMcMode] = useState(true);
+  const [gameMode, setGameMode] = useState<GameMode>('classic');
+  const [camerasEnabled, setCamerasEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const difficulties: Difficulty[] = ['easy', 'medium', 'hard'];
 
   const handleCreate = async () => {
     if (!topic.trim()) return;
+    playSound('click');
     setLoading(true);
     try {
       await onCreate({
@@ -56,24 +63,7 @@ export function CreateGame({ locale, onLocaleChange, onCreate, t }: Props) {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.wrap}>
-      <Text style={styles.title}>{t('createChallenge')}</Text>
-
-      <View style={styles.langRow}>
-        <Pressable
-          style={[styles.chip, locale === 'en' && styles.chipActive]}
-          onPress={() => onLocaleChange('en')}
-        >
-          <Text style={styles.chipText}>{t('english')}</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.chip, locale === 'ru' && styles.chipActive]}
-          onPress={() => onLocaleChange('ru')}
-        >
-          <Text style={styles.chipText}>{t('russian')}</Text>
-        </Pressable>
-      </View>
-
+    <View style={styles.card}>
       <Text style={styles.label}>{t('topic')}</Text>
       <TextInput
         style={styles.input}
@@ -83,82 +73,85 @@ export function CreateGame({ locale, onLocaleChange, onCreate, t }: Props) {
         placeholderTextColor={colors.textMuted}
       />
 
-      <Text style={styles.label}>{t('difficulty')}</Text>
-      <View style={styles.row}>
-        {difficulties.map((d) => (
-          <Pressable
-            key={d}
-            style={[styles.chip, difficulty === d && styles.chipActive]}
-            onPress={() => setDifficulty(d)}
-          >
-            <Text style={styles.chipText}>{t(d)}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.label}>{t('numQuestions')}: {numQuestions}</Text>
-      <View style={styles.row}>
-        {[3, 5, 7, 10].map((n) => (
-          <Pressable
-            key={n}
-            style={[styles.chip, numQuestions === n && styles.chipActive]}
-            onPress={() => setNumQuestions(n)}
-          >
-            <Text style={styles.chipText}>{n}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.switchRow}>
-        <Text style={styles.label}>{t('multipleChoice')}</Text>
-        <Switch value={mcMode} onValueChange={setMcMode} trackColor={{ true: colors.accent }} />
-      </View>
-      {!mcMode ? (
-        <Text style={styles.hint}>{t('voiceAnswers')}</Text>
-      ) : null}
-
-      <View style={styles.row}>
-        <Pressable
-          style={[styles.chip, gameMode === 'think' && styles.chipActive]}
-          onPress={() => setGameMode('think')}
-        >
-          <Text style={styles.chipText}>{t('thinkRace')}</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.chip, gameMode === 'classic' && styles.chipActive]}
-          onPress={() => setGameMode('classic')}
-        >
-          <Text style={styles.chipText}>{t('classic')}</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.switchRow}>
-        <Text style={styles.label}>{camerasEnabled ? t('camerasOn') : t('camerasOff')}</Text>
-        <Switch
-          value={camerasEnabled}
-          onValueChange={setCamerasEnabled}
-          trackColor={{ true: colors.accent }}
-        />
-      </View>
-
-      <Pressable
-        style={[styles.btn, (!topic.trim() || loading) && styles.disabled]}
+      <KeycapButton
+        variant="primary"
         disabled={!topic.trim() || loading}
         onPress={handleCreate}
       >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.btnText}>{t('createChallenge')}</Text>
-        )}
-      </Pressable>
-    </ScrollView>
+        {loading ? <ActivityIndicator color={colors.onPrimary} /> : t('createChallenge')}
+      </KeycapButton>
+
+      <KeycapButton variant="secondary" onPress={() => setShowAdjust((v) => !v)}>
+        {showAdjust ? t('hideAdjust') : t('adjust')}
+      </KeycapButton>
+
+      {showAdjust ? (
+        <View style={styles.adjustPanel}>
+          <Text style={styles.adjustHeading}>{t('settings')}</Text>
+
+          <Text style={styles.label}>{t('difficulty')}</Text>
+          <View style={styles.row}>
+            {difficulties.map((d) => (
+              <Pressable
+                key={d}
+                style={[styles.chip, difficulty === d && styles.chipActive]}
+                onPress={() => setDifficulty(d)}
+              >
+                <Text style={styles.chipText}>{t(d)}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={styles.label}>{t('numQuestions')}</Text>
+          <KeycapSegSlider value={numQuestions} onChange={setNumQuestions} />
+
+          <View style={styles.switchRow}>
+            <Text style={styles.label}>{t('multipleChoice')}</Text>
+            <Switch value={mcMode} onValueChange={setMcMode} trackColor={{ true: colors.accent }} />
+          </View>
+          {!mcMode ? <Text style={styles.hint}>{t('voiceAnswers')}</Text> : null}
+
+          <Text style={styles.label}>{t('gameMode')}</Text>
+          <Pressable
+            style={[styles.modeCard, gameMode === 'classic' && styles.modeCardActive]}
+            onPress={() => setGameMode('classic')}
+          >
+            <Text style={styles.modeTitle}>{t('firstAnswerMode')}</Text>
+            <Text style={styles.modeDesc}>{t('firstAnswerModeDesc')}</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.modeCard, gameMode === 'think' && styles.modeCardActive]}
+            onPress={() => setGameMode('think')}
+          >
+            <Text style={styles.modeTitle}>{t('thinkRaceMode')}</Text>
+            <Text style={styles.modeDesc}>{t('thinkRaceModeDesc')}</Text>
+          </Pressable>
+
+          <View style={styles.switchRow}>
+            <Text style={styles.label}>{camerasEnabled ? t('camerasOn') : t('camerasOff')}</Text>
+            <Switch
+              value={camerasEnabled}
+              onValueChange={setCamerasEnabled}
+              trackColor={{ true: colors.accent }}
+            />
+          </View>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { padding: 20, gap: 12, paddingBottom: 40 },
-  title: { color: colors.text, fontSize: 26, fontWeight: '700', marginBottom: 8 },
+  card: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    padding: 20,
+    gap: 12,
+    backgroundColor: colors.bgCard,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   label: { color: colors.textMuted, fontSize: 14 },
   input: {
     backgroundColor: colors.bgElevated,
@@ -167,9 +160,9 @@ const styles = StyleSheet.create({
     color: colors.text,
     borderWidth: 1,
     borderColor: colors.border,
+    fontSize: 16,
   },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  langRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -178,17 +171,34 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  chipActive: { borderColor: colors.accentBright, backgroundColor: '#1e3330' },
+  chipActive: { borderColor: colors.accent, backgroundColor: '#d8ebe8' },
   chipText: { color: colors.text, fontSize: 13 },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   hint: { color: colors.textMuted, fontSize: 12 },
-  btn: {
-    backgroundColor: colors.accent,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 12,
+  adjustPanel: {
+    gap: 12,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
-  btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  adjustHeading: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
   disabled: { opacity: 0.5 },
+  modeCard: {
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 4,
+  },
+  modeCardActive: {
+    borderColor: colors.accent,
+    backgroundColor: '#d8ebe8',
+  },
+  modeTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  modeDesc: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
 });

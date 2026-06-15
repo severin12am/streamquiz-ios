@@ -8,11 +8,27 @@ export function t(locale: Locale, key: MessageKey): string {
   return messages[locale][key] ?? messages.en[key] ?? key;
 }
 
+const SPEECH_LANG: Record<Locale, string> = {
+  en: 'en-US',
+  ru: 'ru-RU',
+  es: 'es-ES',
+  ar: 'ar-SA',
+  fr: 'fr-FR',
+  de: 'de-DE',
+  ja: 'ja-JP',
+};
+
 export function speechLangFor(locale: Locale): string {
-  return locale === 'ru' ? 'ru-RU' : 'en-US';
+  return SPEECH_LANG[locale];
 }
 
 export function defaultLocaleFromDevice(languageTag?: string): Locale {
-  if (languageTag?.toLowerCase().startsWith('ru')) return 'ru';
+  const tag = languageTag?.toLowerCase() ?? '';
+  if (tag.startsWith('ru')) return 'ru';
+  if (tag.startsWith('es')) return 'es';
+  if (tag.startsWith('ar')) return 'ar';
+  if (tag.startsWith('fr')) return 'fr';
+  if (tag.startsWith('de')) return 'de';
+  if (tag.startsWith('ja')) return 'ja';
   return 'en';
 }

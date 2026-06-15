@@ -1,3 +1,10 @@
+/**
+ * App navigation + deep links.
+ *
+ * Routes: Home | Game(gameId, asHost) | Debug (dev only)
+ * Prefixes: whosmarter://, streamquiz:// (legacy), EXPO_PUBLIC_API_BASE_URL, expo dev URL.
+ * clientId from AsyncStorage — loaded before rendering (required for join reattach).
+ */
 import React, { useEffect, useState } from 'react';
 import { Pressable, Text } from 'react-native';
 import { NavigationContainer, LinkingOptions } from '@react-navigation/native';
@@ -5,17 +12,25 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import { getClientId } from '@/lib/client-id';
 import { parseGameIdFromLink } from '@/api/client';
+import { API_BASE_URL } from '@/lib/config';
 import { debugLog } from '@/lib/debug-log';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { GameScreen } from '@/screens/GameScreen';
 import { DebugScreen } from '@/screens/DebugScreen';
+import { useLocale } from '@/context/LocaleProvider';
 import { colors } from '@/theme';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+// Universal Links: https://your-domain/game/{uuid} opens as guest (parity with web join URL).
 const linking: LinkingOptions<RootStackParamList> = {
-  prefixes: [Linking.createURL('/'), 'streamquiz://'],
+  prefixes: [
+    Linking.createURL('/'),
+    'whosmarter://',
+    'streamquiz://',
+    ...(API_BASE_URL ? [API_BASE_URL] : []),
+  ],
   config: {
     screens: {
       Home: '',
@@ -28,6 +43,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 };
 
 export function RootNavigator() {
+  const { t } = useLocale();
   const [clientId, setClientId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -52,14 +68,14 @@ export function RootNavigator() {
           name="Home"
           component={HomeScreen}
           options={({ navigation }) => ({
-            title: 'StreamQuiz',
+            title: t('pageTitle'),
             headerRight: __DEV__
               ? () => (
                   <Pressable
                     onPress={() => navigation.navigate('Debug')}
                     style={{ paddingHorizontal: 12 }}
                   >
-                    <Text style={{ color: '#8b9aab', fontSize: 12 }}>Logs</Text>
+                    <Text style={{ color: colors.textMuted, fontSize: 12 }}>Logs</Text>
                   </Pressable>
                 )
               : undefined,

@@ -1,3 +1,7 @@
+/**
+ * Env config from .env / app.config.ts extra. All three vars required (isConfigured).
+ * api() builds absolute URLs — required for RN (relative /api/... fails on device).
+ */
 import Constants from 'expo-constants';
 
 const extra = Constants.expoConfig?.extra ?? {};

@@ -1,3 +1,7 @@
+/**
+ * Shared types — keep in sync with web lib/types.ts and Supabase schema (PROJECT.md §9).
+ * Legacy phases buzzing/judging exist in DB but are unused.
+ */
 export const MAX_PLAYERS = 6;
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
@@ -15,7 +19,7 @@ export type GamePhase =
   | 'judging';
 
 export type PlayerRole = 'host' | 'player';
-export type Locale = 'en' | 'ru';
+export type Locale = 'en' | 'ru' | 'es' | 'ar' | 'fr' | 'de' | 'ja';
 
 export interface Question {
   question: string;

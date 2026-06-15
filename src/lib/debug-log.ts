@@ -1,3 +1,4 @@
+/** In-memory ring buffer for DebugScreen — dev builds only. Copy all → clipboard. */
 export type LogLevel = 'info' | 'warn' | 'error' | 'api' | 'game' | 'webrtc' | 'sync';
 
 export interface LogEntry {
@@ -78,5 +79,5 @@ export function formatLogsForExport(extra?: Record<string, unknown>): string {
     (e) =>
       `${e.ts} [${e.level}] ${e.tag}: ${e.message}${e.data ? ` | ${e.data}` : ''}`,
   );
-  return `--- StreamQuiz debug log ---\n${JSON.stringify(header, null, 2)}\n---\n${lines.join('\n')}\n`;
+  return `--- WhoSmarter debug log ---\n${JSON.stringify(header, null, 2)}\n---\n${lines.join('\n')}\n`;
 }

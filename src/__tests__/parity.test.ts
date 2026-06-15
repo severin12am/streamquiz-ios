@@ -1,3 +1,8 @@
+/**
+ * Unit tests for parity-critical pure functions.
+ * Run before device testing: npm test
+ * Does NOT cover WebRTC, speech, or full state machine integration.
+ */
 import { hasAnswered, msUntil, secondsUntil } from '@/lib/supabase';
 import { isMcAnswerCorrect, normalizeMcText } from '@/lib/mc-utils';
 import { playerColor } from '@/lib/player-colors';
@@ -114,5 +119,11 @@ describe('round patches', () => {
   it('after think goes to question for MC', () => {
     const patch = afterThinkPatch(game);
     expect(patch.phase).toBe('question');
+  });
+
+  it('classic voice skips thinking', () => {
+    const voiceGame = { ...game, mc_mode: false };
+    const patch = roundStartPatch({ ...voiceGame, game_mode: 'classic' });
+    expect(patch.phase).toBe('answering');
   });
 });

@@ -1,3 +1,9 @@
+/**
+ * Home / create / join entry. Route: web "/".
+ *
+ * Create: API generate-questions → insert games row → navigate Game asHost:true.
+ * Join: parse UUID from pasted link → navigate Game asHost:false.
+ */
 import React, { useState } from 'react';
 import {
   View,
@@ -15,7 +21,12 @@ import { isConfigured } from '@/lib/config';
 import { getSupabase } from '@/lib/supabase';
 import { addQuestionsToHistory, getPreviousQuestions } from '@/lib/question-history';
 import { useLocale } from '@/context/LocaleProvider';
+import { BrandLogo } from '@/components/BrandLogo';
 import { CreateGame } from '@/components/CreateGame';
+import { HomeDotTexture } from '@/components/HomeDotTexture';
+import { LanguagePicker } from '@/components/LanguagePicker';
+import { SoundToggle } from '@/components/SoundToggle';
+import { playSound } from '@/lib/sounds';
 import type { RootStackParamList } from '@/navigation/types';
 import { colors } from '@/theme';
 
@@ -83,50 +94,81 @@ export function HomeScreen({ navigation }: Props) {
       Alert.alert('Error', 'Invalid game ID or link');
       return;
     }
+    playSound('click');
     navigation.navigate('Game', { gameId: id, asHost: false });
   };
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <Text style={styles.brand}>{t('appName')}</Text>
-      <CreateGame locale={locale} onLocaleChange={setLocale} onCreate={handleCreate} t={t} />
+    <View style={styles.root}>
+      <HomeDotTexture />
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <View style={styles.topBar}>
+        <View style={styles.topSpacer} />
+        <SoundToggle style={styles.soundToggle} />
+        <LanguagePicker locale={locale} onLocaleChange={setLocale} />
+      </View>
 
-      <View style={styles.divider} />
+      <BrandLogo />
+      <Text style={styles.steps}>{t('homeSteps')}</Text>
 
-      <Text style={styles.joinTitle}>{t('joinById')}</Text>
-      <TextInput
-        style={styles.input}
-        value={joinInput}
-        onChangeText={setJoinInput}
-        placeholder={t('pasteGameId')}
-        placeholderTextColor={colors.textMuted}
-        autoCapitalize="none"
-      />
-      <Pressable style={styles.joinBtn} onPress={handleJoin}>
-        <Text style={styles.joinBtnText}>{t('join')}</Text>
-      </Pressable>
+      <CreateGame onCreate={handleCreate} t={t} />
+
+      <View style={styles.joinCard}>
+        <Text style={styles.joinTitle}>{t('joinById')}</Text>
+        <TextInput
+          style={styles.input}
+          value={joinInput}
+          onChangeText={setJoinInput}
+          placeholder={t('pasteGameId')}
+          placeholderTextColor={colors.textMuted}
+          autoCapitalize="none"
+        />
+        <KeycapButton variant="primary" onPress={handleJoin} style={styles.joinBtn}>
+          {t('join')}
+        </KeycapButton>
+      </View>
     </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  scroll: { flex: 1 },
   content: { paddingBottom: 40 },
-  brand: {
-    color: colors.accentBright,
-    fontSize: 32,
-    fontWeight: '800',
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    gap: 8,
+  },
+  topSpacer: { flex: 1 },
+  soundToggle: {},
+  steps: {
+    color: colors.textMuted,
+    fontSize: 14,
     textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 8,
+    marginTop: 8,
+    marginBottom: 12,
+    paddingHorizontal: 24,
+    lineHeight: 20,
   },
   center: { flex: 1, justifyContent: 'center', padding: 24 },
   error: { color: colors.wrong, textAlign: 'center' },
-  divider: { height: 1, backgroundColor: colors.border, marginHorizontal: 20, marginVertical: 16 },
-  joinTitle: { color: colors.text, fontSize: 18, fontWeight: '600', marginHorizontal: 20 },
-  input: {
+  joinCard: {
     marginHorizontal: 20,
-    marginTop: 8,
+    marginTop: 20,
+    padding: 20,
+    gap: 10,
+    backgroundColor: colors.bgCard,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  joinTitle: { color: colors.text, fontSize: 17, fontWeight: '600' },
+  input: {
     backgroundColor: colors.bgElevated,
     borderRadius: 12,
     padding: 14,
@@ -135,14 +177,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   joinBtn: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.accent,
+    marginTop: 4,
   },
-  joinBtnText: { color: colors.accentBright, fontWeight: '700' },
 });

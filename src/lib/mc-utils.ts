@@ -1,3 +1,4 @@
+/** MC answer normalization + scoring helpers. Tested in parity.test.ts — keep in sync with web. */
 import type { Question } from './types';
 
 export function normalizeMcText(text: string): string {

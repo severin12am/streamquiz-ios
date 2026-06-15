@@ -1,3 +1,16 @@
+/**
+ * In-game orchestrator — same role as web components/GameScreen.tsx.
+ *
+ * UI states (conditional render, single screen):
+ *   loading → JoinScreen → Lobby (status=waiting) → playing → WinnerScreen overlay
+ *
+ * Wires together: useGameState, useMeshWebRTC, useSpeechRecognition.
+ *
+ * iOS-specific:
+ * - micPolicy: WebRTC mic OFF during voice answering (Speech uses mic); PTT between rounds.
+ * - Transcript writes throttled to TRANSCRIPT_THROTTLE_MS (350ms).
+ * - Host rematch: when host + ≥1 guest voted, regenerates questions via API.
+ */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -9,8 +22,11 @@ import { getSavedName, saveName } from '@/lib/client-id';
 import { speechLangFor } from '@/lib/i18n';
 import { useLocale } from '@/context/LocaleProvider';
 import { useGameState } from '@/hooks/useGameState';
+import { useGameSounds } from '@/hooks/useGameSounds';
 import { useMeshWebRTC } from '@/hooks/useMeshWebRTC';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
+import { playSound } from '@/lib/sounds';
+import { SoundToggle } from '@/components/SoundToggle';
 import { JoinScreen } from '@/components/JoinScreen';
 import { Lobby } from '@/components/Lobby';
 import { CameraGrid } from '@/components/CameraGrid';
@@ -38,6 +54,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     me,
     loading,
     error,
+    timeLeft,
     timeLeftMs,
     currentQuestion,
     join,
@@ -49,6 +66,8 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     rematch,
   } = useGameState(gameId, clientId);
 
+  useGameSounds({ game, players, me, timeLeft });
+
   const [joining, setJoining] = useState(false);
   const [gameFull, setGameFull] = useState(false);
   const [savedName, setSavedName] = useState('');
@@ -56,13 +75,14 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
   const [typedMode, setTypedMode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pttHeld, setPttHeld] = useState(false);
+  const [rematchLoading, setRematchLoading] = useState(false);
 
   const lastTranscriptWrite = useRef(0);
   const transcriptPending = useRef<string | null>(null);
   const throttleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const camerasEnabled = game?.cameras_enabled ?? false;
-  const { localStream, remoteStreams, startCamera, setMicEnabled } = useMeshWebRTC(
+  const { localStream, remoteStreams, startCamera, setMicEnabled, cameraError } = useMeshWebRTC(
     gameId,
     me?.id ?? null,
     camerasEnabled,
@@ -94,7 +114,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     [flushTranscript],
   );
 
-  const { startListening, stopListening } = useSpeechRecognition(
+  const { startListening, stopListening, speechError } = useSpeechRecognition(
     (text) => {
       if (!typedMode) {
         setTypedText(text);
@@ -109,32 +129,43 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
   }, []);
 
   useLayoutEffect(() => {
-    if (!__DEV__) return;
     navigation.setOptions({
-      headerRight: () => (
-        <Pressable
-          onPress={() =>
-            navigation.navigate('Debug', {
-              snapshot: {
-                gameId: gameId.slice(0, 8),
-                asHost,
-                clientId: clientId.slice(0, 8),
-                me: me ? { slot: me.slot, role: me.role, score: me.score } : null,
-                phase: game?.phase,
-                status: game?.status,
-                players: players.length,
-                timeLeftMs,
-                qIndex: game?.current_question_index,
-              },
-            })
-          }
-          style={{ paddingHorizontal: 12 }}
-        >
-          <Text style={{ color: '#8b9aab', fontSize: 12 }}>Logs</Text>
-        </Pressable>
-      ),
+      headerRight: () =>
+        __DEV__ ? (
+          <View style={styles.headerRight}>
+            <Pressable
+              onPress={() =>
+                navigation.navigate('Debug', {
+                  snapshot: {
+                    gameId: gameId.slice(0, 8),
+                    asHost,
+                    clientId: clientId.slice(0, 8),
+                    me: me ? { slot: me.slot, role: me.role, score: me.score } : null,
+                    phase: game?.phase,
+                    status: game?.status,
+                    players: players.length,
+                    timeLeftMs,
+                    qIndex: game?.current_question_index,
+                  },
+                })
+              }
+              style={styles.headerBtn}
+            >
+              <Text style={styles.headerBtnMuted}>Logs</Text>
+            </Pressable>
+          </View>
+        ) : undefined,
     });
-  }, [navigation, gameId, asHost, clientId, me, game, players.length, timeLeftMs]);
+  }, [
+    navigation,
+    gameId,
+    asHost,
+    clientId,
+    me,
+    game,
+    players.length,
+    timeLeftMs,
+  ]);
 
   const rematchInFlight = useRef(false);
   useEffect(() => {
@@ -143,6 +174,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     if (!me.rematch || guestVotes < 1) return;
 
     rematchInFlight.current = true;
+    setRematchLoading(true);
     void (async () => {
       try {
         const previous = await getPreviousQuestions(game.topic);
@@ -164,6 +196,8 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
         await rematch(questions);
       } catch {
         rematchInFlight.current = false;
+      } finally {
+        setRematchLoading(false);
       }
     })();
   }, [game, me, players, locale, rematch]);
@@ -172,10 +206,11 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     if (me) void startCamera();
   }, [me, startCamera]);
 
+  // Voice answering uses Apple Speech — keep WebRTC mic off during that phase to avoid iOS audio fights.
   const micPolicy = useCallback(() => {
     if (!game) return false;
     if (game.mc_mode) return true;
-    if (game.phase === 'answering') return true;
+    if (game.phase === 'answering') return false;
     return pttHeld;
   }, [game, pttHeld]);
 
@@ -193,6 +228,12 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
       void stopListening();
     };
   }, [game?.phase, me?.done, typedMode, me, startListening, stopListening]);
+
+  useEffect(() => {
+    if (speechError && game?.phase === 'answering') {
+      setTypedMode(true);
+    }
+  }, [speechError, game?.phase]);
 
   useEffect(() => {
     if (game?.phase !== 'answering' && typedText.trim() && me && !me.done) {
@@ -239,33 +280,47 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
   if (!me) {
     return (
-      <JoinScreen
-        initialName={savedName}
-        loading={joining}
-        gameFull={gameFull}
-        onJoin={handleJoin}
-        t={t}
-      />
+      <View style={styles.root}>
+        <View style={styles.soundToggleWrap}>
+          <SoundToggle />
+        </View>
+        <JoinScreen
+          initialName={savedName}
+          loading={joining}
+          gameFull={gameFull}
+          onJoin={handleJoin}
+          t={t}
+        />
+      </View>
     );
   }
 
   if (game.status === 'waiting') {
     return (
-      <Lobby
-        game={game}
-        players={players}
-        shareUrl={gameShareUrl(gameId)}
-        isHost={me.role === 'host'}
-        canStart={players.length >= 2}
-        onStart={() => void startGame()}
-        onCopyLink={async () => {
-          await Clipboard.setStringAsync(gameShareUrl(gameId));
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        }}
-        copied={copied}
-        t={t}
-      />
+      <View style={styles.root}>
+        <View style={styles.soundToggleWrap}>
+          <SoundToggle />
+        </View>
+        <Lobby
+          game={game}
+          players={players}
+          shareUrl={gameShareUrl(gameId)}
+          isHost={me.role === 'host'}
+          canStart={players.length >= 2}
+          onStart={() => {
+            playSound('click');
+            void startGame();
+          }}
+          onCopyLink={async () => {
+            playSound('click');
+            await Clipboard.setStringAsync(gameShareUrl(gameId));
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }}
+          copied={copied}
+          t={t}
+        />
+      </View>
     );
   }
 
@@ -273,6 +328,9 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
   return (
     <View style={styles.root}>
+      <View style={styles.soundToggleWrap}>
+        <SoundToggle />
+      </View>
       <ScrollView contentContainerStyle={styles.playArea}>
         <CameraGrid
           players={players}
@@ -281,26 +339,44 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
           myId={me.id}
           camerasEnabled={camerasEnabled}
           showResult={game.phase === 'result'}
+          phase={game.phase}
+          mcMode={game.mc_mode}
+          t={t}
+          localMedia={{
+            micLive: micPolicy(),
+            cameraBlocked: camerasEnabled && Boolean(cameraError),
+            micBlocked: Boolean(cameraError),
+          }}
         />
         <QuestionPanel
           game={game}
           question={currentQuestion}
+          players={players}
           me={me}
           timeLeftMs={timeLeftMs}
           typedText={typedText}
           typedMode={typedMode}
+          speechUnavailable={Boolean(speechError) && game.phase === 'answering'}
           onTypedChange={handleTypedChange}
           onToggleTypedMode={() => setTypedMode((v) => !v)}
           onSelectMC={(i) => void submitMCAnswer(i)}
           onDone={() => void finishAnswer(typedText.trim() || undefined)}
           onPushToTalkIn={() => setPttHeld(true)}
           onPushToTalkOut={() => setPttHeld(false)}
+          pttHeld={pttHeld}
           t={t}
         />
-        <ScoreBoard players={players} />
+        <ScoreBoard players={players} meId={me.id} phase={game.phase} label={t('score')} />
       </ScrollView>
       {showWinner ? (
-        <WinnerScreen players={players} me={me} onRematch={() => void voteRematch()} t={t} />
+        <WinnerScreen
+          players={players}
+          me={me}
+          rematchLoading={rematchLoading}
+          onRematch={() => void voteRematch()}
+          onExit={() => navigation.navigate('Home')}
+          t={t}
+        />
       ) : null}
     </View>
   );
@@ -308,8 +384,17 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  playArea: { padding: 12, gap: 12, paddingBottom: 32 },
+  soundToggleWrap: {
+    position: 'absolute',
+    top: 8,
+    right: 12,
+    zIndex: 20,
+  },
+  playArea: { padding: 12, gap: 12, paddingBottom: 32, paddingTop: 44 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, gap: 12 },
   muted: { color: colors.textMuted },
   error: { color: colors.wrong, textAlign: 'center' },
+  headerRight: { flexDirection: 'row', alignItems: 'center' },
+  headerBtn: { paddingHorizontal: 10 },
+  headerBtnMuted: { color: colors.textMuted, fontSize: 12 },
 });

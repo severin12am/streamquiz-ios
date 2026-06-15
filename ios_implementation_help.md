@@ -1,6 +1,6 @@
-# StreamQuiz — React Native iOS Implementation Guide
+# WhoSmarter — React Native iOS Implementation Guide
 
-This document is written for an agent (or developer) building a **React Native iOS app from scratch** that achieves **feature parity** with the existing StreamQuiz web app.
+This document is written for an agent (or developer) building a **React Native iOS app from scratch** that achieves **feature parity** with the existing WhoSmarter web app.
 
 Read this file **together with**:
 
@@ -63,9 +63,10 @@ Web uses `localStorage`. iOS equivalent:
 
 | Web key | RN storage | Purpose |
 |---------|------------|---------|
-| `streamquiz-client-id` | `@react-native-async-storage/async-storage` | Stable UUID per install — survives reload, re-attaches seat |
-| `streamquiz-player-name` | AsyncStorage | Prefill join screen |
-| `streamquiz-locale` | AsyncStorage | `en` or `ru` |
+| `whosmarter-client-id` | `@react-native-async-storage/async-storage` | Stable UUID per install — survives reload, re-attaches seat |
+| `whosmarter-player-name` | AsyncStorage | Prefill join screen |
+| `whosmarter-locale` | AsyncStorage | UI locale (`en`, `ru`, `es`, `fr`, `de`, `ja`, `ar`) |
+| `whosmarter-recent-questions:{topic}` | AsyncStorage | Question dedup per topic |
 
 Use `crypto.randomUUID()` (via `expo-crypto` or `react-native-get-random-values` polyfill) for new client IDs.
 
@@ -84,7 +85,7 @@ These choices minimize iOS pain and match web capabilities:
 | Storage | `@react-native-async-storage/async-storage` | Replaces localStorage |
 | Speech (voice mode) | `@react-native-voice/voice` | iOS Speech framework bridge; more reliable than Web Speech API |
 | Permissions | `expo-camera` / `expo-av` or RN permissions API | Camera + mic before `getUserMedia` |
-| Deep links | `expo-linking` + iOS Universal Links (optional v1: custom URL scheme) | Join `streamquiz://game/{id}` or `https://yourdomain.com/game/{id}` |
+| Deep links | `expo-linking` + iOS Universal Links (optional v1: custom URL scheme) | Join `whosmarter://game/{id}` or `https://yourdomain.com/game/{id}` |
 | QR display | `react-native-qrcode-svg` | Lobby + create screen |
 | Share link | `expo-clipboard` + `expo-sharing` or Share API | Copy invite URL |
 | Env vars | `expo-constants` + `app.config.ts` `extra` | See §4 |
@@ -162,7 +163,6 @@ src/
     useGameState.ts      # Port almost verbatim
     useMeshWebRTC.ts     # Port signaling logic; swap browser APIs
     useSpeechRecognition.ts
-    useMediaRecorder.ts  # Optional v1 — see §12
   screens/
     HomeScreen.tsx
     GameScreen.tsx
@@ -197,15 +197,15 @@ export const TRANSCRIPT_THROTTLE_MS = 350;  // GameScreen — throttle Supabase 
 
 Also copy `MAX_PLAYERS = 6` from `lib/types.ts`.
 
-**Default create form values** (from `CreateGame.tsx`):
+**Default create form values** (see `PROJECT.md` §6 — UI label **First answer** = DB `classic`):
 
 | Field | Default |
 |-------|---------|
 | difficulty | `medium` |
 | num_questions | `5` |
-| mc_mode | `false` (voice mode) |
-| game_mode | `think` |
-| cameras_enabled | `false` |
+| mc_mode | `true` (multiple choice) |
+| game_mode | `classic` (First answer) |
+| cameras_enabled | `true` |
 
 ---
 
@@ -295,9 +295,9 @@ Fetch ICE servers from API; fall back to same public STUN/TURN list as web if AP
 
 ```xml
 <key>NSCameraUsageDescription</key>
-<string>StreamQuiz uses your camera so other players can see you during the quiz.</string>
+<string>WhoSmarter uses your camera so other players can see you during the quiz.</string>
 <key>NSMicrophoneUsageDescription</key>
-<string>StreamQuiz uses your microphone for voice answers and talking to other players.</string>
+<string>WhoSmarter uses your microphone for voice answers and talking to other players.</string>
 <key>UIBackgroundModes</key>
 <array>
   <string>audio</string>
@@ -312,7 +312,6 @@ For voice recognition add `NSSpeechRecognitionUsageDescription`.
 
 - Rematch flow (host regenerates questions via API, `mergePreviousQuestions`)
 - Question history in AsyncStorage (`lib/question-history.ts`)
-- Answer clip recording (`useMediaRecorder`) — **lower priority** on iOS; see §12
 - Push-to-talk button (voice mode): `onPressIn` / `onPressOut` instead of Space key
 - QR + share link on create and lobby
 
@@ -463,26 +462,25 @@ This cuts device debugging from hours to minutes.
 
 ### 12.1 Must-have for parity v1
 
-- [ ] Create game (all form options)
-- [ ] Join by link / game ID
-- [ ] Lobby with player list, share link, QR
-- [ ] Host start (requires ≥2 players)
-- [ ] Think + classic modes
-- [ ] MC + voice modes
-- [ ] All phases + timers + first-answer grace
-- [ ] Independent per-player scoring
-- [ ] Winner screen + rematch voting
-- [ ] EN + RU UI and question locale
-- [ ] Server clock sync
-- [ ] Realtime + 2.5s polling fallback
-- [ ] WebRTC audio (cameras optional per game setting)
-- [ ] Push-to-talk in voice mode between rounds
+- [x] Create game (all form options)
+- [x] Join by link / game ID
+- [x] Lobby with player list, share link, QR
+- [x] Host start (requires ≥2 players)
+- [x] Think + classic modes
+- [x] MC + voice modes
+- [x] All phases + timers + first-answer grace
+- [x] Independent per-player scoring
+- [x] Winner screen + rematch voting
+- [x] EN + RU UI and question locale
+- [x] Server clock sync
+- [x] Realtime + 2.5s polling fallback
+- [x] WebRTC audio (cameras optional per game setting)
+- [x] Push-to-talk in voice mode between rounds
 
 ### 12.2 Acceptable v1 differences (document, don't block ship)
 
 | Feature | Web | iOS v1 |
 |---------|-----|--------|
-| Answer clip download | WebM blobs in browser memory | Optional — iOS recording format differs; can ship "clips coming soon" or export via share sheet |
 | Space key PTT | Keyboard | Touch PTT button only |
 | QR scan to join | Display only; user scans with camera app | Same — display QR; add native scanner in v1.1 if desired |
 | Link format | `https://domain/game/{id}` | Same URL; register Universal Links so tapping opens app |
@@ -508,7 +506,7 @@ On iOS, speech recognition may conflict with WebRTC audio session. **Recommended
 
 ### 12.5 Deep linking
 
-**Minimum v1:** Custom URL scheme `streamquiz://game/{uuid}`
+**Minimum v1:** Custom URL scheme `whosmarter://game/{uuid}`
 
 **Better:** Universal Link `https://your-netlify-domain.app/game/{uuid}` → opens app with `role=player`
 
@@ -612,10 +610,9 @@ When porting, read these web files in this order:
 3. **Absolute API URLs** — never relative paths in RN.
 4. **One Supabase client** — singleton, same as web.
 5. **Expo dev client** — build once, then iterate with fast refresh.
-6. **Defer clips** if blocked — don't let recording delay the rest.
-7. **Copy i18n keys verbatim** — use the same dot-path keys from `messages.ts`.
-8. **Log aggressively in dev** — strip in production.
+6. **Copy i18n keys verbatim** — use the same dot-path keys from `messages.ts`.
+7. **Log aggressively in dev** — strip in production.
 
 ---
 
-*This guide targets parity with the StreamQuiz web app as documented in `PROJECT.md` (6-player multiplayer, think-race mode, optional cameras, AI judging, OpenRouter via Next.js API, EN/RU).*
+*This guide targets parity with the WhoSmarter web app as documented in `PROJECT.md` (6-player multiplayer, think-race mode, optional cameras, AI judging, OpenRouter via Next.js API, 7 UI locales).*

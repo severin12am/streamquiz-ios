@@ -1,5 +1,10 @@
+/**
+ * Central question UI: timer, MC options, voice input, per-player result rows.
+ * answeringMuted banner: local player in voice phase (others can't hear on iOS).
+ */
 import React from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ActivityIndicator } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import type { Game, Player, Question } from '@/lib/types';
 import {
   QUESTION_TIME_SECONDS,
@@ -7,24 +12,29 @@ import {
   VOICE_ANSWER_SECONDS,
   RESULT_TIME_SECONDS,
 } from '@/hooks/useGameState';
+import { playerColor } from '@/lib/player-colors';
 import { CountdownTimer } from './CountdownTimer';
-import { MCOptions } from './MCOptions';
+import { MCOptions, type OptionPick } from './MCOptions';
+import { KeycapButton } from './KeycapButton';
 import type { TranslateFn } from '@/lib/i18n';
 import { colors } from '@/theme';
 
 interface Props {
   game: Game;
   question: Question | null;
+  players: Player[];
   me: Player | null;
   timeLeftMs: number;
   typedText: string;
   typedMode: boolean;
+  speechUnavailable?: boolean;
   onTypedChange: (text: string) => void;
   onToggleTypedMode: () => void;
   onSelectMC: (index: number) => void;
   onDone: () => void;
   onPushToTalkIn?: () => void;
   onPushToTalkOut?: () => void;
+  pttHeld?: boolean;
   t: TranslateFn;
 }
 
@@ -43,22 +53,46 @@ function totalMsForPhase(phase: Game['phase'], mcMode: boolean): number {
   }
 }
 
+function buildPicksByOption(players: Player[], meId: string | undefined): OptionPick[][] {
+  const picks: OptionPick[][] = [[], [], [], []];
+  for (const p of players) {
+    if (p.mc_index !== null && p.mc_index >= 0 && p.mc_index < 4) {
+      picks[p.mc_index]!.push({
+        id: p.id,
+        name: p.name,
+        colour: playerColor(p.slot),
+        isMe: p.id === meId,
+      });
+    }
+  }
+  return picks;
+}
+
 export function QuestionPanel({
   game,
   question,
+  players,
   me,
   timeLeftMs,
   typedText,
   typedMode,
+  speechUnavailable,
   onTypedChange,
   onToggleTypedMode,
   onSelectMC,
   onDone,
   onPushToTalkIn,
   onPushToTalkOut,
+  pttHeld = false,
   t,
 }: Props) {
   const idx = game.current_question_index + 1;
+  const picksByOption = buildPicksByOption(players, me?.id);
+  const mcCanSelect =
+    game.phase === 'question' && !!me && me.mc_index === null && !!question?.options;
+  const showMcGrid =
+    !!question?.options &&
+    (game.phase === 'question' || (game.phase === 'result' && game.mc_mode));
 
   return (
     <View style={styles.panel}>
@@ -69,10 +103,7 @@ export function QuestionPanel({
       {game.phase === 'thinking' ? (
         <View style={styles.center}>
           <Text style={styles.thinking}>{t('thinking')}</Text>
-          <CountdownTimer
-            timeLeftMs={timeLeftMs}
-            totalMs={THINK_TIME_SECONDS * 1000}
-          />
+          <CountdownTimer timeLeftMs={timeLeftMs} totalMs={THINK_TIME_SECONDS * 1000} />
         </View>
       ) : null}
 
@@ -94,17 +125,33 @@ export function QuestionPanel({
             />
           ) : null}
 
-          {game.phase === 'question' && question.options ? (
+          {showMcGrid && question.options ? (
             <MCOptions
               options={question.options}
-              selected={me?.mc_index ?? null}
-              disabled={!me}
+              correctAnswer={game.phase === 'result' ? question.correct_answer : undefined}
+              myPick={me?.mc_index ?? null}
+              picksByOption={game.phase === 'result' ? picksByOption : undefined}
+              canSelect={mcCanSelect}
+              youLabel={t('youPick')}
               onSelect={onSelectMC}
             />
           ) : null}
 
           {game.phase === 'answering' ? (
             <View style={styles.voiceBox}>
+              {me?.done ? (
+                <View style={styles.answeringStatusWait}>
+                  <Text style={styles.answeringStatusText}>{t('answeringWaiting')}</Text>
+                </View>
+              ) : (
+                <View style={styles.answeringStatusMuted}>
+                  <MaterialIcons name="mic-off" size={22} color={colors.accent} />
+                  <Text style={styles.answeringStatusText}>{t('answeringMuted')}</Text>
+                </View>
+              )}
+              {speechUnavailable ? (
+                <Text style={styles.speechHint}>{t('speechUnavailable')}</Text>
+              ) : null}
               <TextInput
                 style={styles.input}
                 value={typedText}
@@ -115,36 +162,45 @@ export function QuestionPanel({
                 editable={!me?.done}
               />
               <View style={styles.voiceActions}>
-                <Pressable style={styles.secondaryBtn} onPress={onToggleTypedMode}>
-                  <Text style={styles.secondaryText}>
-                    {typedMode ? t('speakInstead') : t('typeInstead')}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.pttBtn, me?.done && styles.disabled]}
-                  disabled={!!me?.done}
-                  onPressIn={onPushToTalkIn}
-                  onPressOut={onPushToTalkOut}
-                >
-                  <Text style={styles.pttText}>{t('pushToTalk')}</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.primaryBtn, me?.done && styles.disabled]}
-                  disabled={!!me?.done}
-                  onPress={onDone}
-                >
-                  <Text style={styles.primaryText}>{t('done')}</Text>
-                </Pressable>
+                <KeycapButton variant="secondary" onPress={onToggleTypedMode}>
+                  {typedMode ? t('speakInstead') : t('typeInstead')}
+                </KeycapButton>
+                {onPushToTalkIn && onPushToTalkOut ? (
+                  <KeycapButton
+                    variant={pttHeld ? 'success' : 'secondary'}
+                    onPressIn={onPushToTalkIn}
+                    onPressOut={onPushToTalkOut}
+                  >
+                    {t('pushToTalk')}
+                  </KeycapButton>
+                ) : null}
+                <KeycapButton variant="primary" disabled={!!me?.done} onPress={onDone}>
+                  {t('done')}
+                </KeycapButton>
               </View>
             </View>
           ) : null}
 
-          {game.phase === 'result' ? (
+          {game.phase === 'result' && !game.mc_mode ? (
             <View style={styles.resultBox}>
               <Text style={styles.resultTitle}>{t('result')}</Text>
-              <Text style={game.answer_correct ? styles.correct : styles.wrong}>
-                {game.answer_correct ? t('correct') : t('wrong')}
-              </Text>
+              {players.map((p) => {
+                const badge = p.correct === true ? '✓' : p.correct === false ? '✗' : '—';
+                const badgeStyle =
+                  p.correct === true
+                    ? styles.playerCorrect
+                    : p.correct === false
+                      ? styles.playerWrong
+                      : styles.playerNeutral;
+                return (
+                  <View key={p.id} style={styles.playerResultRow}>
+                    <Text style={styles.playerResultName} numberOfLines={1}>
+                      {p.name}
+                    </Text>
+                    <Text style={[styles.playerResultBadge, badgeStyle]}>{badge}</Text>
+                  </View>
+                );
+              })}
             </View>
           ) : null}
         </>
@@ -169,6 +225,25 @@ const styles = StyleSheet.create({
   checking: { color: colors.textMuted, marginTop: 8 },
   question: { color: colors.text, fontSize: 18, fontWeight: '600', textAlign: 'center' },
   voiceBox: { gap: 10 },
+  speechHint: { color: colors.wrong, fontSize: 13, textAlign: 'center' },
+  answeringStatusMuted: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#d8ebe8',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  answeringStatusWait: {
+    backgroundColor: colors.bgElevated,
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  answeringStatusText: { color: colors.text, fontSize: 14, flex: 1, fontWeight: '500' },
   input: {
     backgroundColor: colors.bgElevated,
     borderRadius: 10,
@@ -179,33 +254,21 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   voiceActions: { gap: 8 },
-  primaryBtn: {
-    backgroundColor: colors.accent,
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  primaryText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  secondaryBtn: {
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  secondaryText: { color: colors.textMuted },
-  pttBtn: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.accent,
-  },
-  pttText: { color: colors.accentBright, fontWeight: '600' },
   disabled: { opacity: 0.5 },
-  resultBox: { alignItems: 'center', gap: 8, paddingVertical: 12 },
-  resultTitle: { color: colors.textMuted, fontSize: 14 },
-  correct: { color: colors.correct, fontSize: 22, fontWeight: '700' },
-  wrong: { color: colors.wrong, fontSize: 22, fontWeight: '700' },
+  resultBox: { gap: 8, paddingVertical: 12, width: '100%' },
+  resultTitle: { color: colors.textMuted, fontSize: 14, textAlign: 'center', marginBottom: 4 },
+  playerResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: colors.bgElevated,
+    borderRadius: 8,
+  },
+  playerResultName: { color: colors.text, flex: 1, fontSize: 14 },
+  playerResultBadge: { fontSize: 18, fontWeight: '700', minWidth: 28, textAlign: 'center' },
+  playerCorrect: { color: colors.correct },
+  playerWrong: { color: colors.wrong },
+  playerNeutral: { color: colors.textMuted },
 });

@@ -1,17 +1,19 @@
-const COLORS = [
+/** Per-player slot colors — matches web lib/player-colors.ts (lagoon palette). */
+export const PLAYER_COLORS = [
   '#2f7d77',
-  '#c45c26',
-  '#5b6ee1',
-  '#b84d7a',
-  '#8b6b3d',
-  '#4a8f5c',
-];
+  '#e08a3c',
+  '#7b68d6',
+  '#d65780',
+  '#4f9d57',
+  '#3b87bd',
+] as const;
 
 export function playerColor(slot: number): string {
-  return COLORS[slot % COLORS.length] ?? COLORS[0];
+  const n = PLAYER_COLORS.length;
+  return PLAYER_COLORS[((slot % n) + n) % n];
 }
 
 export function playerInitial(name: string): string {
-  const trimmed = name.trim();
-  return trimmed ? trimmed.charAt(0).toUpperCase() : '?';
+  const trimmed = (name ?? '').trim();
+  return trimmed ? trimmed[0].toUpperCase() : '?';
 }

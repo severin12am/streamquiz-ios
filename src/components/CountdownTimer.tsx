@@ -9,6 +9,12 @@ interface Props {
   label?: string;
 }
 
+function timerColor(seconds: number): string {
+  if (seconds > 10) return colors.timerOk;
+  if (seconds > 5) return colors.timerWarning;
+  return colors.timerUrgent;
+}
+
 export function CountdownTimer({ timeLeftMs, totalMs, label }: Props) {
   const size = 88;
   const stroke = 6;
@@ -17,6 +23,7 @@ export function CountdownTimer({ timeLeftMs, totalMs, label }: Props) {
   const progress = totalMs > 0 ? Math.min(1, timeLeftMs / totalMs) : 0;
   const offset = circumference * (1 - progress);
   const seconds = Math.ceil(timeLeftMs / 1000);
+  const ringColor = timerColor(seconds);
 
   return (
     <View style={styles.wrap}>
@@ -33,7 +40,7 @@ export function CountdownTimer({ timeLeftMs, totalMs, label }: Props) {
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={colors.accentBright}
+          stroke={ringColor}
           strokeWidth={stroke}
           fill="none"
           strokeDasharray={`${circumference} ${circumference}`}
@@ -44,7 +51,7 @@ export function CountdownTimer({ timeLeftMs, totalMs, label }: Props) {
         />
       </Svg>
       <View style={styles.center}>
-        <Text style={styles.seconds}>{seconds}</Text>
+        <Text style={[styles.seconds, { color: ringColor }]}>{seconds}</Text>
         {label ? <Text style={styles.label}>{label}</Text> : null}
       </View>
     </View>
@@ -54,6 +61,6 @@ export function CountdownTimer({ timeLeftMs, totalMs, label }: Props) {
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', justifyContent: 'center' },
   center: { position: 'absolute', alignItems: 'center' },
-  seconds: { color: colors.text, fontSize: 28, fontWeight: '700' },
+  seconds: { fontSize: 28, fontWeight: '700' },
   label: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
 });

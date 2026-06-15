@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ActivityIndicator } from 'react-native';
 import type { TranslateFn } from '@/lib/i18n';
+import { playSound } from '@/lib/sounds';
+import { KeycapButton } from '@/components/KeycapButton';
 import { colors } from '@/theme';
 
 interface Props {
@@ -13,6 +15,7 @@ interface Props {
 
 export function JoinScreen({ initialName, loading, gameFull, onJoin, t }: Props) {
   const [name, setName] = useState(initialName);
+  const disabled = !name.trim() || gameFull || loading;
 
   return (
     <View style={styles.wrap}>
@@ -26,17 +29,16 @@ export function JoinScreen({ initialName, loading, gameFull, onJoin, t }: Props)
         placeholderTextColor={colors.textMuted}
         autoCapitalize="words"
       />
-      <Pressable
-        style={[styles.btn, (!name.trim() || gameFull) && styles.disabled]}
-        disabled={!name.trim() || gameFull || loading}
-        onPress={() => onJoin(name.trim())}
+      <KeycapButton
+        variant="primary"
+        disabled={disabled}
+        onPress={() => {
+          playSound('click');
+          onJoin(name.trim());
+        }}
       >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.btnText}>{t('join')}</Text>
-        )}
-      </Pressable>
+        {loading ? <ActivityIndicator color={colors.onPrimary} /> : t('join')}
+      </KeycapButton>
     </View>
   );
 }
@@ -53,12 +55,4 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  btn: {
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  disabled: { opacity: 0.5 },
 });

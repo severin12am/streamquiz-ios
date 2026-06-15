@@ -1,3 +1,17 @@
+/**
+ * Game state machine — heart of WhoSmarter iOS.
+ *
+ * Spec: PROJECT.md §7 (state machine), ios_implementation_help.md §9.
+ * Tests: src/__tests__/parity.test.ts (constants + roundStartPatch only).
+ *
+ * Rules (do not break without updating web + tests):
+ * - Any client may drive phase transitions when deadlines expire (not host-only).
+ * - Use updateGameIfPhase / updateGameIfDeadline for guarded writes — prevents double scoring.
+ * - Timing constants must match web exactly (exported at top of this file).
+ * - me = player where client_id matches; each client writes only its own players row.
+ *
+ * Flow: load game → Realtime + 2.5s poll → 100ms ticker → deadline/early-advance logic.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { checkAnswer } from '@/api/client';
 import { getMcOptionText, isMcAnswerCorrect, sanitizeMcQuestion } from '@/lib/mc-utils';
@@ -25,6 +39,8 @@ import {
 import { debugLog } from '@/lib/debug-log';
 import type { Game, Player, Question } from '@/lib/types';
 
+// MARK: - Parity timing constants (must match web hooks/useGameState.ts)
+
 export const THINK_TIME_SECONDS = 5;
 export const QUESTION_TIME_SECONDS = 15;
 export const VOICE_ANSWER_SECONDS = 12;
@@ -37,6 +53,9 @@ export const TICK_INTERVAL_MS = 100;
 export const MAX_INIT_ATTEMPTS = 5;
 export const INIT_RETRY_DELAY_MS = 1200;
 
+// MARK: - Pure phase patches (unit-tested; used by startGame + advanceToNext)
+
+/** First phase after host starts or after advancing to next question. */
 export function roundStartPatch(game: Game): Partial<Game> {
   const q = game.questions[game.current_question_index];
   const sanitized = game.mc_mode && q ? { ...game, questions: sanitizeQuestions(game) } : game;
@@ -72,6 +91,7 @@ function sanitizeQuestions(game: Game): Question[] {
   return game.questions.map((q) => (q.options ? sanitizeMcQuestion(q) : q));
 }
 
+/** Transition when think-race countdown ends. */
 export function afterThinkPatch(game: Game): Partial<Game> {
   if (game.mc_mode) {
     return {
@@ -102,6 +122,8 @@ interface UseGameStateResult {
   voteRematch: () => Promise<void>;
   rematch: (questions?: Question[]) => Promise<void>;
 }
+
+// MARK: - useGameState hook
 
 export function useGameState(gameId: string, clientId: string): UseGameStateResult {
   const [game, setGame] = useState<Game | null>(null);
@@ -227,6 +249,8 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
     return () => clearInterval(id);
   }, []);
 
+  // MARK: Phase handlers (called by ticker)
+
   const resolveMcRound = useCallback(async () => {
     if (resolvingRef.current) return;
     resolvingRef.current = true;
@@ -337,6 +361,11 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
     if (won) await refreshPlayers();
   }, [refreshPlayers]);
 
+  /**
+   * First-answer grace (both game modes): when any player answers during question/answering,
+   * shrink phase_deadline so at most FIRST_ANSWER_GRACE_SECONDS (4s) remain for others.
+   * Web "first answer" mode = classic (no thinking phase); think race adds 5s thinking first.
+   */
   const maybeShrinkDeadline = useCallback(async () => {
     const g = gameRef.current;
     const list = playersRef.current;
@@ -372,6 +401,8 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
       if (won) void runVoiceCheck();
     }
   }, [resolveMcRound, runVoiceCheck]);
+
+  // MARK: Ticker — runs every TICK_INTERVAL_MS via `tick` dep; advances phases on deadline
 
   useEffect(() => {
     const g = game;
@@ -434,6 +465,8 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
       return () => clearInterval(timeout);
     }
   }, [game?.id, game?.phase, runVoiceCheck]);
+
+  // MARK: Player actions (UI calls these)
 
   const join = useCallback(
     async (name: string, asHost: boolean) => {

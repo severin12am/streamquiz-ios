@@ -1,4 +1,4 @@
-# StreamQuiz
+# WhoSmarter
 
 A real-time live quiz show for **up to 6 players**, each on their own camera. Built with Next.js, Supabase, and OpenAI.
 
@@ -12,7 +12,7 @@ A real-time live quiz show for **up to 6 players**, each on their own camera. Bu
 ### 1. Push to GitHub
 ```bash
 git add .
-git commit -m "Initial StreamQuiz app"
+git commit -m "Initial WhoSmarter app"
 # Create a new repo on github.com, then:
 git remote add origin https://github.com/YOUR_USERNAME/streamquiz.git
 git branch -M main
@@ -73,7 +73,7 @@ Open [http://localhost:3000](http://localhost:3000)
 4. **Host** clicks **START QUIZ** (available once at least one other player has joined)
 5. Each round, **everyone answers** — pick a multiple-choice option, or speak/type your answer in voice mode
 6. Every correct answer scores **+1**, judged independently per player — scores update live on each camera tile
-7. After all questions: a ranked winner screen + option to download answer clips, and anyone can vote to **rematch**
+7. After all questions: a ranked winner screen, and anyone can vote to **rematch**
 
 ---
 
@@ -117,7 +117,6 @@ hooks/
   useGameState.ts             ← Game + players logic, Supabase sync
   useMeshWebRTC.ts            ← Peer-to-peer camera MESH (up to 6)
   useSpeechRecognition.ts     ← Browser voice recognition
-  useMediaRecorder.ts         ← Answer clip recording
 
 lib/
   supabase.ts                 ← Supabase client + game/player helpers
@@ -139,4 +138,3 @@ supabase/
 - **OpenAI API** (question generation, gpt-4o-mini)
 - **WebRTC** (peer-to-peer camera streaming via Supabase Broadcast signaling)
 - **Web Speech API** (browser voice recognition, Chrome/Edge only)
-- **MediaRecorder API** (answer clip recording)

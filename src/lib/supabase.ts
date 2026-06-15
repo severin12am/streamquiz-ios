@@ -1,3 +1,12 @@
+/**
+ * Supabase client, clock sync, guarded DB updates, join/slot logic, Realtime subscriptions.
+ *
+ * Spec: PROJECT.md §9–10. Ported from web lib/supabase.ts — behavior must stay identical.
+ *
+ * Clock: serverNow() = Date.now() + offset from Supabase Date header. Resync every 30s.
+ * Guards: updateGameIfPhase / updateGameIfDeadline — compare-and-swap; only one client wins.
+ * Join: slot 0 = host (asHost:true), slots 1–5 = guests; reattach by client_id.
+ */
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
 import { debugLog } from '@/lib/debug-log';
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from './config';
@@ -85,6 +94,7 @@ export async function updateGame(gameId: string, patch: Partial<Game>): Promise<
   if (error) throw error;
 }
 
+/** Returns true if this client won the race (expected phase matched). */
 export async function updateGameIfPhase(
   gameId: string,
   expectedPhase: string,
@@ -156,6 +166,10 @@ function nextFreeSlot(players: Player[], asHost: boolean): number | null {
   return null;
 }
 
+/**
+ * Take or reattach a seat. Returns null if game full or host seat taken.
+ * Role comes from slot (0=host), not from who created the game row.
+ */
 export async function joinGame(
   gameId: string,
   clientId: string,

@@ -1,6 +1,6 @@
-# StreamQuiz — Complete Project Documentation
+# WhoSmarter — Complete Project Documentation
 
-This document is the authoritative, in-depth reference for the **StreamQuiz** codebase. It covers what the app does, how it is built, how data flows, and where to change behavior. For a quick start, see [README.md](./README.md).
+This document is the authoritative, in-depth reference for the **WhoSmarter** codebase. It covers what the app does, how it is built, how data flows, and where to change behavior. For a quick start, see [README.md](./README.md).
 
 ---
 
@@ -37,7 +37,7 @@ This document is the authoritative, in-depth reference for the **StreamQuiz** co
 
 ## 1. Overview
 
-**StreamQuiz** is a real-time, multiplayer live quiz show for up to **6 players**. Each participant joins from their own browser, optionally shares their camera and microphone, and competes simultaneously on AI-generated questions. The experience is designed to feel like a TV quiz show: countdown timers, live scoreboards, camera tiles, and a winner screen at the end.
+**WhoSmarter** is a real-time, multiplayer live quiz show for up to **6 players**. Each participant joins from their own browser, optionally shares their camera and microphone, and competes simultaneously on AI-generated questions. The experience is designed to feel like a TV quiz show: countdown timers, live scoreboards, camera tiles, and a winner screen at the end.
 
 ### Core concept
 
@@ -60,9 +60,9 @@ The app evolved from a **2-player buzzer quiz** into a **6-player simultaneous-a
 
 - Choose **topic**, **difficulty** (easy / medium / hard), and **question count** (3–10)
 - Toggle **multiple choice** vs **open-ended (voice/text)** answers
-- Toggle **cameras** on or off (default: off — mics still work)
-- Choose **game mode**: fair "think race" (default) or "classic" immediate start
-- Choose **language** (English or Russian) — affects UI and AI-generated questions
+- Toggle **cameras** on or off (default: **on** — mics always work when off)
+- Choose **game mode**: **First answer** (default) or **Think race** — see §6
+- Choose **language** — English, Russian, Spanish, Arabic, French, German, or Japanese — affects UI and AI-generated questions
 - QR code + shareable link for inviting players
 - Session memory avoids repeating recent questions on the same topic
 
@@ -82,13 +82,11 @@ The app evolved from a **2-player buzzer quiz** into a **6-player simultaneous-a
 - **Voice mode**: everyone speaks (or types) their answer, then locks in with **Done**
 - Independent scoring — every correct player gets +1 per round
 - Per-player ✓/✗ badges on camera tiles and in the result reveal
-- **Answer clip recording** (local WebM files, downloadable at end)
 
 ### End of game
 
 - Ranked **winner screen** (handles ties)
 - **Rematch voting** — host + at least one other player triggers a new round with fresh AI questions
-- Download recorded answer clips
 
 ---
 
@@ -105,7 +103,6 @@ The app evolved from a **2-player buzzer quiz** into a **6-player simultaneous-a
 | QR codes | `qrcode.react` | 4.x | Lobby / create-screen invites |
 | Video | WebRTC (browser native) | — | P2P camera/audio mesh |
 | Speech | Web Speech API | — | Live voice transcription |
-| Recording | MediaRecorder API | — | Answer clip capture |
 | Deploy | Netlify + `@netlify/plugin-nextjs` | — | Production hosting |
 
 ---
@@ -176,8 +173,8 @@ Every participant runs the **same** `GameScreen` component. Host-only actions ar
 
 ### Identity persistence
 
-- **`client_id`**: UUID stored in `localStorage` (`streamquiz-client-id`). Survives page reloads so a player re-attaches to the same seat.
-- **Display name**: Saved in `localStorage` (`streamquiz-player-name`) and prefilled on JoinScreen.
+- **`client_id`**: UUID stored in `localStorage` (`whosmarter-client-id`). Survives page reloads so a player re-attaches to the same seat.
+- **Display name**: Saved in `localStorage` (`whosmarter-player-name`) and prefilled on JoinScreen.
 
 ---
 
@@ -185,12 +182,23 @@ Every participant runs the **same** `GameScreen` component. Host-only actions ar
 
 ### Game mode (`game_mode`)
 
-| Mode | Value | Behavior |
-|------|-------|----------|
-| **Think race** (default) | `think` | Each round starts with a **locked** `thinking` phase (5 seconds). Nobody can answer until the deadline passes — fair regardless of connection speed. |
-| **Classic** | `classic` | Round opens immediately to `question` (MC) or `answering` (voice). |
+UI labels and DB values (do not rename the DB values — clients rely on `think` / `classic`):
 
-Set at game creation in `CreateGame.tsx`. Stored in `games.game_mode`.
+| UI label | DB value | Behavior |
+|----------|----------|----------|
+| **First answer** (default) | `classic` | Answer the moment the question appears. Round opens immediately to `question` (MC) or `answering` (voice) — no `thinking` phase. |
+| **Think race** | `think` | A few locked seconds to think, then everyone unlocks together. Each round starts with a **locked** `thinking` phase (5 seconds); nobody can answer until it ends. |
+
+**Copy shown in create UI:**
+
+- **First answer:** “Answer the moment the question appears — the first answer leaves everyone else just 4 seconds.”
+- **Think race:** “A few locked seconds to think, then everyone unlocks together — the first answer starts a 4-second countdown for the rest.”
+
+Set at game creation in `CreateGame.tsx` (web) or under **Adjust** on the iOS home screen. Stored in `games.game_mode`.
+
+### First-answer grace (both modes)
+
+When **any** player submits an answer during `question` or `answering`, `maybeShrinkDeadline()` in `useGameState.ts` shortens `phase_deadline` so at most **4 seconds** remain for everyone else (`FIRST_ANSWER_GRACE_SECONDS`). This is the “4-second countdown” described in the UI — it is **not** a separate game mode.
 
 ### Answer type (`mc_mode`)
 
@@ -203,8 +211,19 @@ Set at game creation in `CreateGame.tsx`. Stored in `games.game_mode`.
 
 | Setting | Default | Effect |
 |---------|---------|--------|
-| `false` | ✓ (default) | Mic only — lighter mesh, less bandwidth |
-| `true` | | 720p camera + mic sent to all peers |
+| `true` | ✓ (default) | 720p camera + mic sent to all peers |
+| `false` | | Mic only — lighter mesh, less bandwidth |
+
+### Default create form
+
+| Field | Default |
+|-------|---------|
+| `difficulty` | `medium` |
+| `num_questions` | `5` |
+| `mc_mode` | `true` (multiple choice) |
+| `game_mode` | `classic` (**First answer**) |
+| `cameras_enabled` | `true` |
+| `locale` | `en` (or device/browser language) |
 
 ---
 
@@ -247,7 +266,7 @@ thinking (5s) → question (15s or early if all picked) → result (5s) → next
 thinking (5s) → answering (12s or early if all Done) → checking → result (5s) → next question
 ```
 
-**Classic mode** skips `thinking` and jumps straight to `question` or `answering`.
+**First answer mode** (`classic`) skips `thinking` and jumps straight to `question` or `answering`.
 
 ### Phase advancement (deadline-driven)
 
@@ -265,6 +284,14 @@ This design means the game continues even if the **host disconnects** — any pa
 |-------|-----------|--------|
 | `question` | Every player has `mc_index !== null` | `resolveMcRound()` |
 | `answering` | Every player has `done === true` | Transition to `checking`, run `runVoiceCheck()` |
+
+### First-answer grace (deadline shrink)
+
+| Trigger | Condition | Action |
+|---------|-----------|--------|
+| Any player answers | `phase` is `question` or `answering`, and `hasAnswered(player)` becomes true for someone | If more than 4s remain on `phase_deadline`, shrink to **4s from now** via `updateGameIfDeadline()` |
+
+Constants: `FIRST_ANSWER_GRACE_SECONDS = 4`. Applies in **both** First answer and Think race modes.
 
 ### Guarded updates
 
@@ -318,7 +345,7 @@ Defined in `lib/supabase.ts`. This prevents double-scoring and duplicate transit
 | `num_questions` | INT | 3–10 |
 | `mc_mode` | BOOLEAN | MC vs voice |
 | `cameras_enabled` | BOOLEAN | Request video streams |
-| `game_mode` | TEXT | `think` or `classic` |
+| `game_mode` | TEXT | `think` (Think race) or `classic` (First answer) |
 | `questions` | JSONB | Array of `Question` objects |
 
 **Live fields** (updated during play):
@@ -456,7 +483,7 @@ When cameras off: `video: false`, `audio: true`.
 | `difficulty` | `easy` \| `medium` \| `hard` |
 | `num_questions` | Clamped 3–10 |
 | `mc_mode` | boolean |
-| `locale` | `en` \| `ru` (default `en`) |
+| `locale` | `en` \| `ru` \| `es` \| `ar` \| `fr` \| `de` \| `ja` (default `en`) |
 | `previous_questions` | Optional dedup list |
 
 **Models (via OpenRouter):**
@@ -528,22 +555,34 @@ Prompts enforce: single unambiguous answers, JSON-only output, topic spread, no 
 
 | Piece | Location |
 |-------|----------|
-| Messages | `lib/i18n/messages.ts` (en + ru) |
+| Messages | `lib/i18n/messages.ts` (full: `en`, `ru`; others may fall back to English UI on mobile) |
 | Helpers | `lib/i18n/index.ts` |
 | Context | `context/LocaleProvider.tsx` |
-| Switcher | `components/LanguageSwitcher.tsx` (home page only) |
+| Switcher | `components/LanguageSwitcher.tsx` (web home) / **Adjust** panel (iOS) |
+
+### Supported locales
+
+| Code | Language | Speech recognition tag |
+|------|----------|------------------------|
+| `en` | English | `en-US` |
+| `ru` | Russian | `ru-RU` |
+| `es` | Spanish | `es-ES` |
+| `ar` | Arabic | `ar-SA` |
+| `fr` | French | `fr-FR` |
+| `de` | German | `de-DE` |
+| `ja` | Japanese | `ja-JP` |
 
 ### Locale selection
 
-1. `localStorage` (`streamquiz-locale`)
-2. Browser language (`ru*` → Russian)
+1. `localStorage` / AsyncStorage (`whosmarter-locale`)
+2. Device or browser language (mapped in `defaultLocaleFromDevice()`)
 3. Default: English
 
-Language is chosen **before game creation** on the home page. It affects:
+Language is chosen **before game creation** on the home page (web) or under **Adjust** (iOS). It affects:
 
 - All UI strings via `t('key')`
-- AI question language
-- Speech recognition lang (`en-US` / `ru-RU`)
+- AI question language (`locale` in `/api/generate-questions`)
+- Speech recognition language (see table above)
 
 There is **no in-game language switcher** (by design).
 
@@ -573,7 +612,7 @@ components/
   MCOptions.tsx               A/B/C/D buttons
   ScoreBoard.tsx              Live leaderboard
   CountdownTimer.tsx          SVG circular timer
-  WinnerScreen.tsx            End overlay, clips, rematch
+  WinnerScreen.tsx            End overlay, rematch
   HomeHeader.tsx              Landing header
   SetupBanner.tsx             Missing env var warning
   LanguageSwitcher.tsx        EN/RU toggle
@@ -583,7 +622,6 @@ hooks/
   useGameState.ts             State machine, Supabase sync, scoring
   useMeshWebRTC.ts            P2P camera mesh
   useSpeechRecognition.ts     Web Speech API wrapper
-  useMediaRecorder.ts         Answer clip recording
 
 lib/
   types.ts                    All shared TypeScript types
@@ -628,6 +666,7 @@ QUESTION_TIME_SECONDS = 15
 VOICE_ANSWER_SECONDS  = 12
 RESULT_TIME_SECONDS   = 5
 CHECK_TIMEOUT_SECONDS = 15
+FIRST_ANSWER_GRACE_SECONDS = 4
 ```
 
 ### `useMeshWebRTC(gameId, myId, camerasEnabled)`
@@ -639,12 +678,6 @@ CHECK_TIMEOUT_SECONDS = 15
 **Returns:** `transcript`, `isListening`, `isSupported`, `startListening`, `stopListening`.
 
 Continuous + interim results. Chrome/Edge primary targets.
-
-### `useMediaRecorder()`
-
-**Returns:** `clips`, `startRecording`, `stopRecording`, `isRecording`.
-
-Records WebM (VP9 preferred) during `answering` phase. Clips stay in browser memory.
 
 ---
 
@@ -767,7 +800,6 @@ Run migrations in order if your DB predates certain features:
 | Speech language | `lib/i18n/index.ts` | `speechLangFor()` |
 | Theme colors | `app/globals.css` | CSS variables in `:root` |
 | Default form values | `components/CreateGame.tsx` | `useState` defaults |
-| Clip format | `hooks/useMediaRecorder.ts` | `mimeType` |
 
 ---
 
@@ -778,7 +810,6 @@ Run migrations in order if your DB predates certain features:
 | Core quiz (MC) | ✓ | ✓ | ✓ |
 | Web Speech API | ✓ | ✗ | Partial |
 | WebRTC mesh | ✓ | ✓ | ✓ (may need TURN) |
-| MediaRecorder | ✓ | ✓ | Partial |
 
 ### Known limitations
 
@@ -787,7 +818,6 @@ Run migrations in order if your DB predates certain features:
 - **AI cost** — each game + rematch calls OpenRouter; each voice round may call check-answer per player
 - **Speech on Firefox** — users must type answers manually
 - **Supabase geo-blocking** — some regions need VPN (error message shown)
-- **Clips not uploaded** — answer recordings exist only in the player's browser session
 
 ---
 
@@ -817,7 +847,8 @@ The app includes multiple layers for unreliable networks:
 5. **ICE restart** on WebRTC failure (impolite peer)
 6. **TURN relay** for strict NAT / VPN
 7. **Checking phase timeout** — if AI judge client vanishes, round still advances
-8. **Think mode** — prevents fast-connection advantage
+8. **Think race mode** — locked `thinking` phase prevents fast-connection advantage on question reveal
+9. **First-answer grace** — 4s deadline shrink when anyone answers (both modes)
 
 ---
 
@@ -827,14 +858,14 @@ Chronological themes from git history:
 
 | Era | Changes |
 |-----|---------|
-| Initial | 2-player StreamQuiz, WebRTC cameras, buzzer mechanic |
+| Initial | 2-player WhoSmarter, WebRTC cameras, buzzer mechanic |
 | WebRTC hardening | Perfect Negotiation, ICE restart, TURN support |
 | Game design | Deadline-driven state machine, steal/streaks (later removed) |
-| Fairness | Think race mode, MC grace window, simultaneous answers |
+| Fairness | First answer + Think race modes, 4s first-answer grace, simultaneous answers |
 | AI judging | Auto voice scoring, correct answer reveal |
 | Multiplayer | `players` table, 6 seats, independent scoring |
-| Polish | i18n (EN/RU), mobile layout, rematch with fresh questions |
-| Recent | Optional host camera toggle, question quality prompts |
+| Polish | i18n, mobile layout, rematch with fresh questions |
+| Recent | First answer / Think race naming, 7 question locales, iOS native client, cameras default on |
 
 The codebase retains legacy DB columns and unused components (`BuzzButton.tsx`) from earlier iterations. The active path is documented in this file.
 
@@ -883,4 +914,4 @@ interface Game {
 
 ---
 
-*Last updated to reflect the codebase as of the 6-player multiplayer version with optional cameras, think-race mode, AI judging, and OpenRouter integration.*
+*Last updated: 6-player multiplayer, First answer (`classic`) + Think race (`think`) modes, 4s first-answer grace, 7 locales, cameras on by default, AI judging via OpenRouter. Native iOS client: see `ios_implementation_help.md`.*

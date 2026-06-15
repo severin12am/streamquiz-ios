@@ -1,3 +1,9 @@
+/**
+ * HTTP calls to deployed Next.js API — never relative URLs, never OpenAI keys in app.
+ *
+ * Routes: POST /api/generate-questions, POST /api/check-answer, GET /api/ice-servers
+ * Base URL: EXPO_PUBLIC_API_BASE_URL (see lib/config.ts)
+ */
 import { api } from '@/lib/config';
 import { debugLog } from '@/lib/debug-log';
 import type { CreateGamePayload, Difficulty, Locale, Question } from '@/lib/types';
@@ -76,6 +82,7 @@ export async function fetchIceServers(): Promise<RTCIceServer[]> {
   }
 }
 
+/** Web join URL — used for QR, copy, share; works for browser + Universal Links. */
 export function gameShareUrl(gameId: string): string {
   const base = api('');
   return `${base}/game/${gameId}`;

@@ -1,3 +1,10 @@
+/**
+ * Voice answers via @react-native-voice/voice (Apple Speech framework).
+ *
+ * GameScreen starts listening in phase=answering when !typedMode && !done.
+ * On speechError, GameScreen auto-enables typed mode (see answeringMuted UI).
+ * Lang: speechLangFor(locale) → en-US / ru-RU.
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Voice, {
   type SpeechErrorEvent,
@@ -8,6 +15,7 @@ interface UseSpeechRecognitionResult {
   transcript: string;
   isListening: boolean;
   isSupported: boolean;
+  speechError: string | null;
   startListening: () => Promise<void>;
   stopListening: () => Promise<void>;
 }
@@ -18,6 +26,7 @@ export function useSpeechRecognition(
 ): UseSpeechRecognitionResult {
   const [transcript, setTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
 
@@ -33,7 +42,10 @@ export function useSpeechRecognition(
       onUpdateRef.current(text);
     };
     Voice.onSpeechEnd = () => setIsListening(false);
-    Voice.onSpeechError = (_e: SpeechErrorEvent) => setIsListening(false);
+    Voice.onSpeechError = (e: SpeechErrorEvent) => {
+      setIsListening(false);
+      setSpeechError(e.error?.message ?? 'speech_failed');
+    };
 
     return () => {
       void Voice.destroy().then(Voice.removeAllListeners);
@@ -44,10 +56,12 @@ export function useSpeechRecognition(
     try {
       await Voice.stop();
       setTranscript('');
+      setSpeechError(null);
       await Voice.start(lang);
       setIsListening(true);
-    } catch {
+    } catch (e) {
       setIsListening(false);
+      setSpeechError(e instanceof Error ? e.message : 'speech_start_failed');
     }
   }, [lang]);
 
@@ -64,6 +78,7 @@ export function useSpeechRecognition(
     transcript,
     isListening,
     isSupported: true,
+    speechError,
     startListening,
     stopListening,
   };
