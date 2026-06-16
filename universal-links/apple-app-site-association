@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["REPLACE_WITH_APPLE_TEAM_ID.com.whosmarter.app"],
+        "paths": ["/game/*"]
+      }
+    ]
+  }
+}

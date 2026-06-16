@@ -1,0 +1,41 @@
+---
+description: Preserve native Swift iOS client compatibility when changing web app, API, or Supabase
+alwaysApply: true
+---
+
+# Native iOS client parity
+
+This repo is WhoSmarter (Next.js on Netlify): **backend + shared game server** for multiplayer quiz.
+
+A separate native **Swift iOS app** ([native_streamquiz](https://github.com/severin12am/native_streamquiz)) uses the **same** Supabase project and **same** deployed API. Do not break API routes, Supabase schema, Realtime channels, or phase/timing behavior without considering iOS parity.
+
+**Authoritative spec:** `PROJECT.md` (state machine, DB, APIs). `ios_implementation_help.md` has extra mobile parity notes (RN-oriented; API/DB/phase flow still apply to Swift).
+
+## Client env (web + iOS)
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://moyhwkzeetwkpqmhrcso.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_k2II_OqsMXkSqfuHNzs9Cg_JCsCgyFc
+```
+
+`OPENAI_API_KEY` is **server-only** (Netlify / `.env.local`) — never commit.
+
+## Deployed API base (mobile)
+
+`https://streamquiz.netlify.app`
+
+- `POST /api/generate-questions`
+- `POST /api/check-answer`
+- `GET /api/ice-servers`
+
+## Supabase
+
+Realtime on `games` and `players`. WebRTC signaling: broadcast channel `webrtc:{gameId}` with presence. Max 6 players.
+
+## Compatibility rules
+
+- Do not rename or remove the API routes above without updating the Swift app.
+- Do not change `games` / `players` columns or phase flow without updating native `GameStateManager`.
+- Publishable key is client-safe; keep AI keys server-only.
+
+When changing the web app, preserve native iOS compatibility unless the user explicitly says otherwise.

@@ -1,0 +1,219 @@
+/**
+ * Mechanical keycap button — parity with web .keycap CSS (340ms spring press).
+ */
+import React, { useRef } from 'react';
+import {
+  Animated,
+  Easing,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
+import { colors } from '@/theme';
+
+export type KeycapVariant =
+  | 'primary'
+  | 'secondary'
+  | 'success'
+  | 'danger'
+  | 'revealedCorrect'
+  | 'revealedWrong'
+  | 'revealedNeutral';
+
+const TRAVEL = 5;
+const PRESS_MS = 170;
+const RELEASE_MS = 340;
+const EASE = Easing.bezier(0.32, 1.45, 0.58, 1);
+
+interface FaceStyle {
+  face: string;
+  facePressed: string;
+  stem: string;
+  text: string;
+  border: string;
+}
+
+const FACES: Record<KeycapVariant, FaceStyle> = {
+  primary: {
+    face: colors.accentBright,
+    facePressed: colors.accentHover,
+    stem: '#153d39',
+    text: colors.onPrimary,
+    border: colors.accentHover,
+  },
+  secondary: {
+    face: colors.bgCard,
+    facePressed: colors.bgElevated,
+    stem: '#bccfb1',
+    text: colors.text,
+    border: colors.borderStrong,
+  },
+  success: {
+    face: colors.correct,
+    facePressed: '#268a58',
+    stem: '#1a5238',
+    text: colors.onPrimary,
+    border: '#268a58',
+  },
+  danger: {
+    face: colors.wrong,
+    facePressed: '#b84a38',
+    stem: '#6b2a20',
+    text: colors.onPrimary,
+    border: '#b84a38',
+  },
+  revealedCorrect: {
+    face: '#dff5ea',
+    facePressed: '#dff5ea',
+    stem: colors.border,
+    text: colors.correct,
+    border: colors.correct,
+  },
+  revealedWrong: {
+    face: '#fdecea',
+    facePressed: '#fdecea',
+    stem: colors.border,
+    text: colors.wrong,
+    border: colors.wrong,
+  },
+  revealedNeutral: {
+    face: colors.bgElevated,
+    facePressed: colors.bgElevated,
+    stem: colors.border,
+    text: colors.textSecondary,
+    border: colors.borderStrong,
+  },
+};
+
+interface Props {
+  variant?: KeycapVariant;
+  onPress?: () => void;
+  onPressIn?: () => void;
+  onPressOut?: () => void;
+  disabled?: boolean;
+  locked?: boolean;
+  accessibilityLabel?: string;
+  children: React.ReactNode;
+  style?: ViewStyle;
+  contentStyle?: ViewStyle;
+  textStyle?: TextStyle;
+  compact?: boolean;
+}
+
+export function KeycapButton({
+  variant = 'secondary',
+  onPress,
+  onPressIn,
+  onPressOut,
+  disabled,
+  locked,
+  accessibilityLabel,
+  children,
+  style,
+  contentStyle,
+  textStyle,
+  compact,
+}: Props) {
+  const y = useRef(new Animated.Value(locked ? TRAVEL : 0)).current;
+  const face = FACES[variant];
+  const inactive = Boolean(disabled || locked);
+
+  const animate = (to: number, duration: number) => {
+    Animated.timing(y, {
+      toValue: to,
+      duration,
+      easing: EASE,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      disabled={inactive}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={onPress}
+      onPressIn={() => {
+        if (!inactive) animate(TRAVEL, PRESS_MS);
+        onPressIn?.();
+      }}
+      onPressOut={() => {
+        if (!locked && !inactive) animate(0, RELEASE_MS);
+        onPressOut?.();
+      }}
+      style={[styles.hit, inactive && styles.disabled, style]}
+    >
+      <View style={[styles.stack, compact && styles.stackCompact]}>
+        <View style={[styles.stem, { backgroundColor: face.stem }]} />
+        <Animated.View
+          style={[
+            styles.face,
+            compact && styles.faceCompact,
+            {
+              backgroundColor: face.face,
+              borderColor: face.border,
+              transform: [{ translateY: y }],
+            },
+            locked && { backgroundColor: face.facePressed },
+            contentStyle,
+          ]}
+        >
+          {typeof children === 'string' || typeof children === 'number' ? (
+            <Text style={[styles.label, { color: face.text }, textStyle]}>{children}</Text>
+          ) : (
+            children
+          )}
+        </Animated.View>
+      </View>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  hit: { alignSelf: 'stretch' },
+  disabled: { opacity: 0.55 },
+  stack: {
+    position: 'relative',
+    paddingBottom: TRAVEL + 4,
+  },
+  stackCompact: {
+    paddingBottom: TRAVEL + 2,
+  },
+  stem: {
+    position: 'absolute',
+    left: 2,
+    right: 2,
+    bottom: 0,
+    height: TRAVEL + 3,
+    borderRadius: 10,
+    opacity: 0.85,
+  },
+  face: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0f2320',
+    shadowOffset: { width: 0, height: TRAVEL + 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  faceCompact: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    minWidth: 40,
+    minHeight: 40,
+  },
+  label: {
+    fontWeight: '700',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+});
