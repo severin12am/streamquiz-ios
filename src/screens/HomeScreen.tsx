@@ -24,6 +24,7 @@ import { useLocale } from '@/context/LocaleProvider';
 import { BrandLogo } from '@/components/BrandLogo';
 import { CreateGame } from '@/components/CreateGame';
 import { HomeDotTexture } from '@/components/HomeDotTexture';
+import { KeycapButton } from '@/components/KeycapButton';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import { SoundToggle } from '@/components/SoundToggle';
 import { playSound } from '@/lib/sounds';

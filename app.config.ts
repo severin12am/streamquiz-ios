@@ -21,6 +21,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
   scheme: 'whosmarter',
+  newArchEnabled: false,
   splash: {
     image: './assets/splash-icon.png',
     resizeMode: 'contain',
@@ -43,6 +44,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   plugins: [
     'expo-dev-client',
+    'expo-asset',
+    'expo-font',
+    'expo-localization',
     [
       '@config-plugins/react-native-webrtc',
       {
