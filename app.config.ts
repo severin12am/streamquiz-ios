@@ -28,7 +28,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   ios: {
     supportsTablet: true,
-    bundleIdentifier: 'com.whosmarter.app',
+    bundleIdentifier: 'com.severin.whosmarter',
     associatedDomains: associatedDomains(),
     infoPlist: {
       NSCameraUsageDescription:
