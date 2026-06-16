@@ -31,6 +31,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     bundleIdentifier: 'com.severin.whosmarter',
     associatedDomains: associatedDomains(),
     infoPlist: {
+      ITSAppUsesNonExemptEncryption: false,
       NSCameraUsageDescription:
         'WhoSmarter uses your camera so other players can see you during the quiz.',
       NSMicrophoneUsageDescription:
