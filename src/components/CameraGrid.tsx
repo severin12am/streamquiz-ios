@@ -39,6 +39,7 @@ export function CameraGrid({
 }: Props) {
   const count = players.length;
   const columns = count <= 2 ? 1 : count <= 4 ? 2 : 3;
+  const showAnswered = phase === 'question' || phase === 'answering';
 
   return (
     <View style={[styles.grid, { flexDirection: columns === 1 ? 'column' : 'row', flexWrap: 'wrap' }]}>
@@ -48,6 +49,7 @@ export function CameraGrid({
         const isLocal = p.id === myId;
         const isAnswering = phase === 'answering' && p.done !== true;
         const mutedToPeers = isLocal && isAnswering && !mcMode;
+        const answered = showAnswered ? (mcMode ? p.mc_index !== null : p.done) : null;
         return (
           <View key={p.id} style={{ width: widthPct, marginBottom: 8 }}>
             <CameraPanel
@@ -60,6 +62,7 @@ export function CameraGrid({
               micBlocked={isLocal ? localMedia?.micBlocked : false}
               isAnswering={isAnswering}
               mutedToPeers={mutedToPeers}
+              answered={answered}
               answeringLabel={t('playerAnswering')}
               mutedLabel={t('answeringMutedShort')}
             />

@@ -4,6 +4,7 @@ import type { Player } from '@/lib/types';
 import { playerColor, playerInitial } from '@/lib/player-colors';
 import type { TranslateFn } from '@/lib/i18n';
 import { KeycapButton } from '@/components/KeycapButton';
+import { KeycapWell } from '@/components/KeycapField';
 import { colors } from '@/theme';
 
 interface Props {
@@ -69,10 +70,7 @@ export function WinnerScreen({
         {ranked.map((p, i) => {
           const isWinner = p.score === topScore && topScore > 0;
           return (
-            <View
-              key={p.id}
-              style={[styles.row, isWinner && styles.rowWinner]}
-            >
+            <KeycapWell key={p.id} style={[styles.row, isWinner && styles.rowWinner]}>
               <Text style={[styles.rank, isWinner && styles.rankWinner]}>
                 {isWinner ? '🏆' : String(i + 1)}
               </Text>
@@ -84,7 +82,7 @@ export function WinnerScreen({
                 {p.id === me?.id ? ` (${t('youPick')})` : ''}
               </Text>
               <Text style={[styles.score, isWinner && styles.scoreWinner]}>{p.score}</Text>
-            </View>
+            </KeycapWell>
           );
         })}
 
@@ -179,12 +177,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    backgroundColor: colors.bgElevated,
-    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
   },
-  rowWinner: { borderWidth: 1, borderColor: colors.gold },
+  rowWinner: {
+    borderTopColor: colors.gold,
+    borderLeftColor: colors.gold,
+    borderRightColor: colors.gold,
+    borderBottomColor: colors.gold,
+  },
   rank: { width: 24, textAlign: 'center', color: colors.textMuted, fontWeight: '700' },
   rankWinner: { color: colors.gold },
   dot: {
