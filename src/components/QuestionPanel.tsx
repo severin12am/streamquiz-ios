@@ -12,7 +12,7 @@ import {
   VOICE_ANSWER_SECONDS,
   RESULT_TIME_SECONDS,
 } from '@/hooks/useGameState';
-import { playerColor } from '@/lib/player-colors';
+import { playerColor, playerInitial } from '@/lib/player-colors';
 import { CountdownTimer } from './CountdownTimer';
 import { MCOptions, type OptionPick } from './MCOptions';
 import { KeycapButton } from './KeycapButton';
@@ -88,6 +88,9 @@ export function QuestionPanel({
 }: Props) {
   const idx = game.current_question_index + 1;
   const picksByOption = buildPicksByOption(players, me?.id);
+  const secondsLeft = Math.max(0, Math.ceil(timeLeftMs / 1000));
+  const iHavePicked = !!me && me.mc_index !== null && me.mc_index !== undefined;
+  const someonePicked = players.some((p) => p.mc_index !== null && p.mc_index !== undefined);
   const mcCanSelect =
     game.phase === 'question' && !!me && me.mc_index === null && !!question?.options;
   const showMcGrid =
@@ -123,6 +126,24 @@ export function QuestionPanel({
               totalMs={totalMsForPhase(game.phase, game.mc_mode)}
               label={game.phase === 'question' ? t('pickAnswer') : t('speakAnswer')}
             />
+          ) : null}
+
+          {game.phase === 'question' && game.mc_mode ? (
+            <View style={styles.mcStatus}>
+              {iHavePicked ? (
+                <Text style={styles.mcStatusLocked}>
+                  {t('answerLocked')} · {secondsLeft}
+                  {t('secondsLeftSuffix')}
+                </Text>
+              ) : someonePicked ? (
+                <Text style={styles.mcStatusUrgent}>
+                  {t('someoneAnswered')} · {secondsLeft}
+                  {t('secondsLeftSuffix')}
+                </Text>
+              ) : (
+                <Text style={styles.mcStatusGo}>{t('answerNow')}</Text>
+              )}
+            </View>
           ) : null}
 
           {showMcGrid && question.options ? (
@@ -184,27 +205,71 @@ export function QuestionPanel({
           {game.phase === 'result' && !game.mc_mode ? (
             <View style={styles.resultBox}>
               <Text style={styles.resultTitle}>{t('result')}</Text>
-              {players.map((p) => {
-                const badge = p.correct === true ? '✓' : p.correct === false ? '✗' : '—';
-                const badgeStyle =
-                  p.correct === true
-                    ? styles.playerCorrect
-                    : p.correct === false
-                      ? styles.playerWrong
-                      : styles.playerNeutral;
-                return (
-                  <View key={p.id} style={styles.playerResultRow}>
-                    <Text style={styles.playerResultName} numberOfLines={1}>
-                      {p.name}
-                    </Text>
-                    <Text style={[styles.playerResultBadge, badgeStyle]}>{badge}</Text>
-                  </View>
-                );
-              })}
+              {[...players]
+                .sort((a, b) => a.slot - b.slot)
+                .map((p) => (
+                  <VoiceResultRow
+                    key={p.id}
+                    name={p.name}
+                    isMe={p.id === me?.id}
+                    youLabel={t('youPick')}
+                    colour={playerColor(p.slot)}
+                    text={p.transcript}
+                    correct={p.correct}
+                    emptyHint={t('noAnswer')}
+                  />
+                ))}
+              {question?.correct_answer ? (
+                <View style={styles.correctAnswerBox}>
+                  <Text style={styles.correctAnswerLabel}>{t('correctAnswerTitle')}</Text>
+                  <Text style={styles.correctAnswerText}>{question.correct_answer}</Text>
+                </View>
+              ) : null}
             </View>
           ) : null}
         </>
       ) : null}
+    </View>
+  );
+}
+
+function VoiceResultRow({
+  name,
+  isMe,
+  youLabel,
+  colour,
+  text,
+  correct,
+  emptyHint,
+}: {
+  name: string;
+  isMe: boolean;
+  youLabel: string;
+  colour: string;
+  text: string | null;
+  correct: boolean | null;
+  emptyHint: string;
+}) {
+  const said = !!text && text.trim().length > 0;
+  const badge = correct ? '✓' : said ? '✗' : '—';
+  const badgeColor = correct ? colors.correct : said ? colors.wrong : colors.borderStrong;
+  return (
+    <View style={[styles.voiceResultRow, { borderLeftColor: colour }]}>
+      <View style={[styles.voiceAvatar, { backgroundColor: colour }]}>
+        <Text style={styles.voiceAvatarText}>{playerInitial(name)}</Text>
+      </View>
+      <View style={styles.voiceResultBody}>
+        <Text style={[styles.voiceResultName, { color: colour }]} numberOfLines={1}>
+          {name}
+          {isMe ? ` (${youLabel})` : ''}
+        </Text>
+        <Text style={styles.voiceResultText} numberOfLines={2}>
+          {said ? `\u201C${text}\u201D` : emptyHint}
+        </Text>
+      </View>
+      <View style={[styles.voiceBadge, { backgroundColor: badgeColor }]}>
+        <Text style={styles.voiceBadgeText}>{badge}</Text>
+      </View>
     </View>
   );
 }
@@ -255,20 +320,55 @@ const styles = StyleSheet.create({
   },
   voiceActions: { gap: 8 },
   disabled: { opacity: 0.5 },
+  mcStatus: { minHeight: 24, alignItems: 'center', justifyContent: 'center' },
+  mcStatusGo: { color: colors.correct, fontSize: 15, fontWeight: '700' },
+  mcStatusUrgent: { color: colors.wrong, fontSize: 15, fontWeight: '700' },
+  mcStatusLocked: { color: colors.textSecondary, fontSize: 13 },
   resultBox: { gap: 8, paddingVertical: 12, width: '100%' },
   resultTitle: { color: colors.textMuted, fontSize: 14, textAlign: 'center', marginBottom: 4 },
-  playerResultRow: {
+  voiceResultRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     backgroundColor: colors.bgElevated,
-    borderRadius: 8,
+    borderRadius: 10,
+    borderLeftWidth: 4,
   },
-  playerResultName: { color: colors.text, flex: 1, fontSize: 14 },
-  playerResultBadge: { fontSize: 18, fontWeight: '700', minWidth: 28, textAlign: 'center' },
-  playerCorrect: { color: colors.correct },
-  playerWrong: { color: colors.wrong },
-  playerNeutral: { color: colors.textMuted },
+  voiceAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceAvatarText: { color: colors.onPrimary, fontSize: 12, fontWeight: '700' },
+  voiceResultBody: { flex: 1, minWidth: 0 },
+  voiceResultName: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  voiceResultText: { color: colors.text, fontSize: 14, fontStyle: 'italic' },
+  voiceBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceBadgeText: { color: colors.onPrimary, fontSize: 13, fontWeight: '700' },
+  correctAnswerBox: {
+    marginTop: 6,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#dff5ea',
+    alignItems: 'center',
+  },
+  correctAnswerLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  correctAnswerText: { color: colors.correct, fontSize: 17, fontWeight: '700' },
 });
