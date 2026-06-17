@@ -26,6 +26,8 @@ interface Props {
   answered?: boolean | null;
   answeringLabel?: string;
   mutedLabel?: string;
+  /** Fill the parent (background mode) instead of a fixed 4:3 tile. */
+  fill?: boolean;
 }
 
 export function CameraPanel({
@@ -41,6 +43,7 @@ export function CameraPanel({
   answered = null,
   answeringLabel = 'Answering',
   mutedLabel = "Can't hear",
+  fill = false,
 }: Props) {
   const color = playerColor(player.slot);
   const resultBadge =
@@ -54,6 +57,7 @@ export function CameraPanel({
     <View
       style={[
         styles.tile,
+        fill ? styles.tileFill : styles.tileAspect,
         { borderColor: isAnswering ? colors.accentBright : color },
       ]}
     >
@@ -129,8 +133,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 2,
-    aspectRatio: 4 / 3,
   },
+  tileAspect: { aspectRatio: 4 / 3 },
+  tileFill: { flex: 1 },
   video: { flex: 1, backgroundColor: '#000' },
   avatar: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   initial: { color: '#fff', fontSize: 36, fontWeight: '800' },

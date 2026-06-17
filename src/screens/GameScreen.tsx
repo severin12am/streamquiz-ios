@@ -39,7 +39,6 @@ import { JoinScreen } from '@/components/JoinScreen';
 import { Lobby } from '@/components/Lobby';
 import { CameraGrid } from '@/components/CameraGrid';
 import { QuestionPanel } from '@/components/QuestionPanel';
-import { ScoreBoard } from '@/components/ScoreBoard';
 import { WinnerScreen } from '@/components/WinnerScreen';
 import type { RootStackParamList } from '@/navigation/types';
 import { colors } from '@/theme';
@@ -340,10 +339,8 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
   return (
     <View style={styles.root}>
-      <View style={styles.soundToggleWrap}>
-        <SoundToggle />
-      </View>
-      <ScrollView contentContainerStyle={styles.playArea}>
+      {/* Full-bleed camera mesh — the WhatsApp-style video backdrop. */}
+      <View style={styles.cameraLayer}>
         <CameraGrid
           players={players}
           localStream={localStream}
@@ -353,6 +350,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
           showResult={game.phase === 'result'}
           phase={game.phase}
           mcMode={game.mc_mode}
+          fill
           t={t}
           localMedia={{
             micLive: micPolicy(),
@@ -360,26 +358,42 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
             micBlocked: Boolean(cameraError),
           }}
         />
-        <QuestionPanel
-          game={game}
-          question={currentQuestion}
-          players={players}
-          me={me}
-          timeLeftMs={timeLeftMs}
-          typedText={typedText}
-          typedMode={typedMode}
-          speechUnavailable={Boolean(speechError) && game.phase === 'answering'}
-          onTypedChange={handleTypedChange}
-          onToggleTypedMode={() => setTypedMode((v) => !v)}
-          onSelectMC={(i) => void submitMCAnswer(i)}
-          onDone={() => void finishAnswer(typedText.trim() || undefined)}
-          onPushToTalkIn={() => setPttHeld(true)}
-          onPushToTalkOut={() => setPttHeld(false)}
-          pttHeld={pttHeld}
-          t={t}
-        />
-        <ScoreBoard players={players} meId={me.id} phase={game.phase} label={t('score')} />
-      </ScrollView>
+      </View>
+
+      <View style={styles.soundToggleWrap}>
+        <SoundToggle />
+      </View>
+
+      {/* Translucent quiz sheet docked over the lower portion of the video. */}
+      <View style={styles.overlaySheet} pointerEvents="box-none">
+        <View style={styles.sheetHandle} />
+        <ScrollView
+          style={styles.sheetScroll}
+          contentContainerStyle={styles.sheetContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <QuestionPanel
+            game={game}
+            question={currentQuestion}
+            players={players}
+            me={me}
+            timeLeftMs={timeLeftMs}
+            typedText={typedText}
+            typedMode={typedMode}
+            speechUnavailable={Boolean(speechError) && game.phase === 'answering'}
+            onTypedChange={handleTypedChange}
+            onToggleTypedMode={() => setTypedMode((v) => !v)}
+            onSelectMC={(i) => void submitMCAnswer(i)}
+            onDone={() => void finishAnswer(typedText.trim() || undefined)}
+            onPushToTalkIn={() => setPttHeld(true)}
+            onPushToTalkOut={() => setPttHeld(false)}
+            pttHeld={pttHeld}
+            dark
+            t={t}
+          />
+        </ScrollView>
+      </View>
       {showWinner ? (
         <WinnerScreen
           players={players}
@@ -402,7 +416,30 @@ const styles = StyleSheet.create({
     right: 12,
     zIndex: 20,
   },
-  playArea: { padding: 12, gap: 12, paddingBottom: 32, paddingTop: 44 },
+  cameraLayer: { flex: 1, padding: 8, paddingTop: 44 },
+  overlaySheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    maxHeight: '66%',
+    backgroundColor: 'rgba(9,13,11,0.82)',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 8,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+    marginBottom: 4,
+  },
+  sheetScroll: { flexGrow: 0 },
+  sheetContent: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 28, gap: 12 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, gap: 12 },
   muted: { color: colors.textMuted },
   error: { color: colors.wrong, textAlign: 'center' },

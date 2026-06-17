@@ -119,6 +119,33 @@ export function useMeshWebRTC(
     state.iceBuffer = [];
   }, []);
 
+  /**
+   * Send a fresh offer to a peer. Only the IMPOLITE side ever offers, which
+   * keeps the mesh glare-free without needing SDP rollback (not reliable in
+   * react-native-webrtc). Used both for the initial connection and to
+   * renegotiate when tracks are added later (e.g. startCamera ran after the
+   * peer already existed — the cause of "I only see my own camera").
+   */
+  const renegotiate = useCallback(
+    async (peerId: string) => {
+      if (!myId) return;
+      const state = peersRef.current.get(peerId);
+      if (!state || state.polite) return;
+      const { pc } = state;
+      try {
+        state.makingOffer = true;
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendSignal({ type: 'offer', from: myId, to: peerId, payload: offer });
+      } catch (e) {
+        debugLog('error', 'webrtc', 'renegotiate failed', String(e));
+      } finally {
+        state.makingOffer = false;
+      }
+    },
+    [myId, sendSignal],
+  );
+
   const ensurePeer = useCallback(
     async (peerId: string) => {
       if (!myId || peerId === myId || peersRef.current.has(peerId)) return;
@@ -158,27 +185,36 @@ export function useMeshWebRTC(
       pc.addEventListener('connectionstatechange', () => {
         const cs = pc.connectionState;
         debugLog('webrtc', 'peer', cs, { peerId: peerId.slice(0, 8) });
-        setConnected(cs === 'connected');
+        if (cs === 'connected') {
+          setConnected(true);
+          setCameraError(null);
+        }
+        // Do NOT tear the peer down on 'disconnected'/'closed' here — a brief
+        // network blip would otherwise permanently drop that player's camera.
+        // The impolite side nudges a recovery with an ICE restart; peers are
+        // only removed when presence reports they actually left the channel.
         if (cs === 'failed' && !polite) {
           void pc.restartIce();
         }
-        if (cs === 'closed' || cs === 'disconnected') {
-          teardownPeer(peerId);
+      });
+
+      pc.addEventListener('iceconnectionstatechange', () => {
+        if (pc.iceConnectionState === 'disconnected' && !polite) {
+          setTimeout(() => {
+            if (pc.iceConnectionState === 'disconnected') {
+              try {
+                pc.restartIce();
+              } catch {
+                /* restartIce unsupported — let presence/teardown handle it */
+              }
+            }
+          }, 2000);
         }
       });
 
-      if (!polite) {
-        state.makingOffer = true;
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          sendSignal({ type: 'offer', from: myId, to: peerId, payload: offer });
-        } finally {
-          state.makingOffer = false;
-        }
-      }
+      if (!polite) await renegotiate(peerId);
     },
-    [myId, sendSignal, addRemote, teardownPeer],
+    [myId, sendSignal, addRemote, renegotiate],
   );
 
   const handleSignal = useCallback(
@@ -257,15 +293,20 @@ export function useMeshWebRTC(
       localStreamRef.current = stream;
       setLocalStream(stream);
 
-      for (const [, state] of peersRef.current) {
+      // The camera may start AFTER some peers already connected (presence can
+      // fire first). Add our tracks to those peers and renegotiate so they
+      // actually receive our video — otherwise they'd only ever see a black
+      // tile for us.
+      for (const [peerId, state] of peersRef.current) {
         stream.getTracks().forEach((track) => state.pc.addTrack(track, stream));
+        void renegotiate(peerId);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Camera/mic permission denied';
       debugLog('error', 'media', msg);
       setCameraError(msg);
     }
-  }, [camerasEnabled]);
+  }, [camerasEnabled, renegotiate]);
 
   /** Downscale video track when peers join/leave (safe no-op if track doesn't support it). */
   const applyDynamicQuality = useCallback(() => {

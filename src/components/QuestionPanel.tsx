@@ -35,6 +35,8 @@ interface Props {
   onPushToTalkIn?: () => void;
   onPushToTalkOut?: () => void;
   pttHeld?: boolean;
+  /** Render for the translucent camera overlay (light text, no card chrome). */
+  dark?: boolean;
   t: TranslateFn;
 }
 
@@ -84,6 +86,7 @@ export function QuestionPanel({
   onPushToTalkIn,
   onPushToTalkOut,
   pttHeld = false,
+  dark = false,
   t,
 }: Props) {
   const idx = game.current_question_index + 1;
@@ -98,14 +101,14 @@ export function QuestionPanel({
     (game.phase === 'question' || (game.phase === 'result' && game.mc_mode));
 
   return (
-    <View style={styles.panel}>
-      <Text style={styles.round}>
+    <View style={[styles.panel, dark && styles.panelDark]}>
+      <Text style={[styles.round, dark && styles.textLightMuted]}>
         {t('round')} {idx} {t('of')} {game.num_questions}
       </Text>
 
       {game.phase === 'thinking' ? (
         <View style={styles.center}>
-          <Text style={styles.thinking}>{t('thinking')}</Text>
+          <Text style={[styles.thinking, dark && styles.textLight]}>{t('thinking')}</Text>
           <CountdownTimer timeLeftMs={timeLeftMs} totalMs={THINK_TIME_SECONDS * 1000} />
         </View>
       ) : null}
@@ -113,13 +116,13 @@ export function QuestionPanel({
       {game.phase === 'checking' ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.accentBright} size="large" />
-          <Text style={styles.checking}>{t('checking')}</Text>
+          <Text style={[styles.checking, dark && styles.textLightMuted]}>{t('checking')}</Text>
         </View>
       ) : null}
 
       {['question', 'answering', 'result'].includes(game.phase) && question ? (
         <>
-          <Text style={styles.question}>{question.question}</Text>
+          <Text style={[styles.question, dark && styles.textLight]}>{question.question}</Text>
           {['question', 'answering'].includes(game.phase) ? (
             <CountdownTimer
               timeLeftMs={timeLeftMs}
@@ -130,7 +133,7 @@ export function QuestionPanel({
           {game.phase === 'question' && game.mc_mode ? (
             <View style={styles.mcStatus}>
               {iHavePicked ? (
-                <Text style={styles.mcStatusLocked}>
+                <Text style={[styles.mcStatusLocked, dark && styles.textLightMuted]}>
                   {t('answerLocked')} · {secondsLeft}
                   {t('secondsLeftSuffix')}
                 </Text>
@@ -283,6 +286,15 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     flex: 1,
   },
+  panelDark: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderRadius: 0,
+    padding: 4,
+    flex: 0,
+  },
+  textLight: { color: '#eef3ec' },
+  textLightMuted: { color: 'rgba(238,243,236,0.72)' },
   round: { color: colors.textMuted, fontSize: 13, textAlign: 'center' },
   center: { alignItems: 'center', gap: 12, paddingVertical: 24 },
   thinking: { color: colors.text, fontSize: 20, fontWeight: '600' },
