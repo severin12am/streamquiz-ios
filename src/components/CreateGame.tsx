@@ -4,20 +4,13 @@
  * Colors: theme.ts (matches web globals.css lagoon palette).
  */
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  Pressable,
-  StyleSheet,
-  ActivityIndicator,
-  Switch,
-} from 'react-native';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, Switch } from 'react-native';
 import type { TranslateFn } from '@/lib/i18n';
 import type { Difficulty, GameMode } from '@/lib/types';
 import { playSound } from '@/lib/sounds';
 import { KeycapSegSlider } from '@/components/KeycapSegSlider';
 import { KeycapButton } from '@/components/KeycapButton';
+import { KeycapTextField } from '@/components/KeycapField';
 import { colors } from '@/theme';
 
 interface Props {
@@ -65,12 +58,10 @@ export function CreateGame({ onCreate, t }: Props) {
   return (
     <View style={styles.card}>
       <Text style={styles.label}>{t('topic')}</Text>
-      <TextInput
-        style={styles.input}
+      <KeycapTextField
         value={topic}
         onChangeText={setTopic}
         placeholder={t('topicPlaceholder')}
-        placeholderTextColor={colors.textMuted}
       />
 
       <KeycapButton

@@ -120,6 +120,15 @@ export function KeycapButton({
   const y = useRef(new Animated.Value(locked ? TRAVEL : 0)).current;
   const face = FACES[variant];
   const inactive = Boolean(disabled || locked);
+  const showDisabled = Boolean(disabled) && !locked;
+  const faceBg = showDisabled
+    ? colors.bgElevated
+    : locked
+      ? face.facePressed
+      : face.face;
+  const faceBorder = showDisabled ? colors.borderStrong : face.border;
+  const stemBg = showDisabled ? colors.borderStrong : face.stem;
+  const textColor = showDisabled ? colors.textMuted : face.text;
 
   const animate = (to: number, duration: number) => {
     Animated.timing(y, {
@@ -147,22 +156,21 @@ export function KeycapButton({
       style={[styles.hit, inactive && styles.disabled, style]}
     >
       <View style={[styles.stack, compact && styles.stackCompact]}>
-        <View style={[styles.stem, { backgroundColor: face.stem }]} />
+        <View style={[styles.stem, { backgroundColor: stemBg }]} />
         <Animated.View
           style={[
             styles.face,
             compact && styles.faceCompact,
             {
-              backgroundColor: face.face,
-              borderColor: face.border,
+              backgroundColor: faceBg,
+              borderColor: faceBorder,
               transform: [{ translateY: y }],
             },
-            locked && { backgroundColor: face.facePressed },
             contentStyle,
           ]}
         >
           {typeof children === 'string' || typeof children === 'number' ? (
-            <Text style={[styles.label, { color: face.text }, textStyle]}>{children}</Text>
+            <Text style={[styles.label, { color: textColor }, textStyle]}>{children}</Text>
           ) : (
             children
           )}
@@ -174,7 +182,7 @@ export function KeycapButton({
 
 const styles = StyleSheet.create({
   hit: { alignSelf: 'stretch' },
-  disabled: { opacity: 0.55 },
+  disabled: { opacity: 0.9 },
   stack: {
     position: 'relative',
     paddingBottom: TRAVEL + 4,

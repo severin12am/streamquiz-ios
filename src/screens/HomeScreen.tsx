@@ -5,15 +5,7 @@
  * Join: parse UUID from pasted link → navigate Game asHost:false.
  */
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  Pressable,
-  StyleSheet,
-  ScrollView,
-  Alert,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { generateQuestions } from '@/api/client';
 import { parseGameIdFromLink } from '@/api/client';
@@ -25,6 +17,7 @@ import { BrandLogo } from '@/components/BrandLogo';
 import { CreateGame } from '@/components/CreateGame';
 import { HomeDotTexture } from '@/components/HomeDotTexture';
 import { KeycapButton } from '@/components/KeycapButton';
+import { KeycapTextField } from '@/components/KeycapField';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import { SoundToggle } from '@/components/SoundToggle';
 import { playSound } from '@/lib/sounds';
@@ -116,12 +109,10 @@ export function HomeScreen({ navigation }: Props) {
 
       <View style={styles.joinCard}>
         <Text style={styles.joinTitle}>{t('joinById')}</Text>
-        <TextInput
-          style={styles.input}
+        <KeycapTextField
           value={joinInput}
           onChangeText={setJoinInput}
           placeholder={t('pasteGameId')}
-          placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
         />
         <KeycapButton variant="primary" onPress={handleJoin} style={styles.joinBtn}>

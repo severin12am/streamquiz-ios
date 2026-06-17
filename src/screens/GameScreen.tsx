@@ -298,6 +298,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
           initialName={savedName}
           loading={joining}
           gameFull={gameFull}
+          asHost={asHost}
           onJoin={handleJoin}
           t={t}
         />
@@ -317,6 +318,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
           shareUrl={gameShareUrl(gameId)}
           isHost={me.role === 'host'}
           canStart={players.length >= 2}
+          meId={me.id}
           onStart={() => {
             playSound('click');
             void startGame();

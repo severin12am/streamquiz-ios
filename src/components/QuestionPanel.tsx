@@ -124,7 +124,6 @@ export function QuestionPanel({
             <CountdownTimer
               timeLeftMs={timeLeftMs}
               totalMs={totalMsForPhase(game.phase, game.mc_mode)}
-              label={game.phase === 'question' ? t('pickAnswer') : t('speakAnswer')}
             />
           ) : null}
 
