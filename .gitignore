@@ -12,3 +12,6 @@ android/
 web-build/
 .env
 .env.local
+
+# Local read-only reference clone of the web repo (never commit)
+_web-ref/

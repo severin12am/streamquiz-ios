@@ -12,7 +12,15 @@
  * - Host rematch: when host + ≥1 guest voted, regenerates questions via API.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Pressable } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+  Pressable,
+  Alert,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Clipboard from 'expo-clipboard';
@@ -251,6 +259,8 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
       const player = await join(name, asHost);
       if (!player) setGameFull(true);
       else await saveName(name);
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Join failed');
     } finally {
       setJoining(false);
     }

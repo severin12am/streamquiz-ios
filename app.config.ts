@@ -39,6 +39,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         'WhoSmarter uses your microphone for voice answers and talking to other players.',
       NSSpeechRecognitionUsageDescription:
         'WhoSmarter uses speech recognition to transcribe your voice answers.',
+      NSPhotoLibraryUsageDescription:
+        'WhoSmarter uses your photo library to save screen recordings of quiz sessions.',
+      NSPhotoLibraryAddUsageDescription:
+        'WhoSmarter saves screen recordings of quiz sessions to your photo library.',
       UIBackgroundModes: ['audio'],
     },
   },

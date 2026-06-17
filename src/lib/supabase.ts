@@ -136,9 +136,9 @@ export async function resetPlayersForRound(gameId: string): Promise<void> {
     players.map((p) =>
       updatePlayer(p.id, {
         mc_index: null,
-        transcript: null,
+        transcript: '',
         correct: null,
-        done: null,
+        done: false,
       }),
     ),
   );
@@ -213,15 +213,19 @@ export async function joinGame(
       slot,
       score: 0,
       mc_index: null,
-      transcript: null,
+      transcript: '',
       correct: null,
-      done: null,
+      done: false,
       rematch: false,
     })
     .select('*')
     .single();
 
   if (error) {
+    debugLog('error', 'join', 'insert failed', {
+      code: error.code,
+      message: error.message,
+    });
     if (error.code === '23505') {
       const refreshed = await fetchPlayers(gameId);
       return refreshed.find((p) => p.client_id === clientId) ?? null;
