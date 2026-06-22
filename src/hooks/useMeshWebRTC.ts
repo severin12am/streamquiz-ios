@@ -9,20 +9,34 @@
  *
  * Dynamic video quality: resolution/bitrate/framerate scale down as peers join (see videoConstraints).
  *
+ * Robustness (ported from the web app — see help_with_fixing_camera_issues.md):
+ * - Reconciliation, not event-driven connect: ensurePeer() is idempotent and reconcile()
+ *   runs on every presence event AND a 3s timer, so a missed presence event self-corrects.
+ * - Discovery is decoupled from capture: we join presence/signaling on identity and attach
+ *   local tracks later when the camera is ready; addTrack fires negotiationneeded → renegotiate.
+ * - Lifecycle/network recovery: on app foreground (AppState) and on network regain/switch
+ *   (NetInfo) we restart capture, re-announce presence, reconcile, and ICE-restart any
+ *   unhealthy peer. The 3s loop also ICE-restarts failed/disconnected peers.
+ *
  * iOS note: GameScreen turns WebRTC mic OFF during voice answering (Speech owns mic).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
+import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import {
   mediaDevices,
   RTCPeerConnection,
   RTCSessionDescription,
   RTCIceCandidate,
   type MediaStream,
+  type RTCRtpSender,
 } from 'react-native-webrtc';
 import { fetchIceServers } from '@/api/client';
 import { debugLog } from '@/lib/debug-log';
 import { getSupabase } from '@/lib/supabase';
 import type { WebRTCSignal } from '@/lib/types';
+
+const RECONCILE_INTERVAL_MS = 3000;
 
 interface UseMeshWebRTCResult {
   localStream: MediaStream | null;
@@ -34,11 +48,14 @@ interface UseMeshWebRTCResult {
 }
 
 type PeerState = {
+  peerId: string;
   pc: RTCPeerConnection;
   makingOffer: boolean;
   ignoreOffer: boolean;
   polite: boolean;
   iceBuffer: RTCIceCandidate[];
+  audioSender: RTCRtpSender | null;
+  videoSender: RTCRtpSender | null;
 };
 
 // Dynamic quality tiers — lower resolution/framerate/bitrate as peers increase.
@@ -71,6 +88,11 @@ export function useMeshWebRTC(
   const iceServersRef = useRef<RTCIceServer[]>([]);
   const iceReadyRef = useRef<Promise<void> | null>(null);
   const channelRef = useRef<ReturnType<ReturnType<typeof getSupabase>['channel']> | null>(null);
+  // Mic enabled state is owned by GameScreen's mic policy; remember it so a capture
+  // restart (e.g. on foreground) doesn't silently re-mute or unmute the user.
+  const micEnabledRef = useRef(false);
+  const camerasEnabledRef = useRef(camerasEnabled);
+  camerasEnabledRef.current = camerasEnabled;
 
   // Guarantee STUN/TURN servers are loaded before any RTCPeerConnection is
   // built. Without this, presence can fire before fetchIceServers() resolves,
@@ -86,16 +108,13 @@ export function useMeshWebRTC(
     await iceReadyRef.current;
   }, []);
 
-  const sendSignal = useCallback(
-    (signal: WebRTCSignal) => {
-      channelRef.current?.send({
-        type: 'broadcast',
-        event: 'signal',
-        payload: signal,
-      });
-    },
-    [],
-  );
+  const sendSignal = useCallback((signal: WebRTCSignal) => {
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'signal',
+      payload: signal,
+    });
+  }, []);
 
   const addRemote = useCallback((peerId: string, stream: MediaStream) => {
     setRemoteStreams((prev) => {
@@ -113,6 +132,17 @@ export function useMeshWebRTC(
     });
   }, []);
 
+  const updateConnected = useCallback(() => {
+    let any = false;
+    for (const [, state] of peersRef.current) {
+      if (state.pc.connectionState === 'connected') {
+        any = true;
+        break;
+      }
+    }
+    setConnected(any);
+  }, []);
+
   const teardownPeer = useCallback(
     (peerId: string) => {
       const state = peersRef.current.get(peerId);
@@ -121,8 +151,9 @@ export function useMeshWebRTC(
         peersRef.current.delete(peerId);
       }
       removeRemote(peerId);
+      updateConnected();
     },
-    [removeRemote],
+    [removeRemote, updateConnected],
   );
 
   const flushIce = useCallback((peerId: string) => {
@@ -134,26 +165,37 @@ export function useMeshWebRTC(
     state.iceBuffer = [];
   }, []);
 
-  /**
-   * Send a fresh offer to a peer. Only the IMPOLITE side ever offers, which
-   * keeps the mesh glare-free without needing SDP rollback (not reliable in
-   * react-native-webrtc). Used both for the initial connection and to
-   * renegotiate when tracks are added later (e.g. startCamera ran after the
-   * peer already existed — the cause of "I only see my own camera").
-   */
-  const renegotiate = useCallback(
-    async (peerId: string) => {
+  // Idempotent: adds local tracks the first time (which fires negotiationneeded and
+  // renegotiates), and swaps in the new tracks via replaceTrack on a capture restart
+  // (seamless — no renegotiation). Safe to call before capture is ready (no-op).
+  const attachLocalTracks = useCallback((state: PeerState) => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+
+    const audio = stream.getAudioTracks()[0] ?? null;
+    const video = stream.getVideoTracks()[0] ?? null;
+
+    if (audio) {
+      if (state.audioSender) void state.audioSender.replaceTrack(audio);
+      else state.audioSender = state.pc.addTrack(audio, stream);
+    }
+    if (video) {
+      if (state.videoSender) void state.videoSender.replaceTrack(video);
+      else state.videoSender = state.pc.addTrack(video, stream);
+    }
+  }, []);
+
+  const iceRestart = useCallback(
+    async (state: PeerState) => {
       if (!myId) return;
-      const state = peersRef.current.get(peerId);
-      if (!state || state.polite) return;
-      const { pc } = state;
       try {
         state.makingOffer = true;
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        sendSignal({ type: 'offer', from: myId, to: peerId, payload: offer });
+        const offer = await state.pc.createOffer({ iceRestart: true });
+        await state.pc.setLocalDescription(offer);
+        sendSignal({ type: 'offer', from: myId, to: state.peerId, payload: offer });
+        debugLog('webrtc', 'ice-restart', state.peerId.slice(0, 8));
       } catch (e) {
-        debugLog('error', 'webrtc', 'renegotiate failed', String(e));
+        debugLog('error', 'webrtc', 'ice-restart failed', String(e));
       } finally {
         state.makingOffer = false;
       }
@@ -162,29 +204,32 @@ export function useMeshWebRTC(
   );
 
   const ensurePeer = useCallback(
-    async (peerId: string) => {
-      if (!myId || peerId === myId || peersRef.current.has(peerId)) return;
+    (peerId: string): PeerState | undefined => {
+      if (!myId || peerId === myId) return peersRef.current.get(peerId);
+      const existing = peersRef.current.get(peerId);
+      if (existing) return existing;
 
-      // Wait for ICE servers before constructing the peer. Re-check the map
-      // afterwards since another presence event may have created it meanwhile.
-      await ensureIceServers();
-      if (peersRef.current.has(peerId)) return;
+      // Don't build a peer until ICE servers are loaded, or it would only ever
+      // gather host candidates and never connect across NAT. Kick off the fetch
+      // and let the reconcile loop / next signal retry once they're ready.
+      if (!iceServersRef.current.length) {
+        void ensureIceServers();
+        return undefined;
+      }
 
       const polite = myId < peerId;
       const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
       const state: PeerState = {
+        peerId,
         pc,
         makingOffer: false,
         ignoreOffer: false,
         polite,
         iceBuffer: [],
+        audioSender: null,
+        videoSender: null,
       };
       peersRef.current.set(peerId, state);
-
-      const stream = localStreamRef.current;
-      if (stream) {
-        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-      }
 
       pc.addEventListener('icecandidate', (event: { candidate: RTCIceCandidate | null }) => {
         if (event.candidate && myId) {
@@ -202,47 +247,65 @@ export function useMeshWebRTC(
         if (remote) addRemote(peerId, remote);
       });
 
+      // Decoupled-capture support: when tracks are added later (camera became ready,
+      // or a renegotiation is needed), create and send an offer. Perfect negotiation
+      // resolves any glare with the peer's own offer.
+      pc.addEventListener('negotiationneeded', async () => {
+        if (pc.signalingState !== 'stable') return;
+        try {
+          state.makingOffer = true;
+          const offer = await pc.createOffer();
+          if (pc.signalingState !== 'stable') return;
+          await pc.setLocalDescription(offer);
+          if (myId) sendSignal({ type: 'offer', from: myId, to: peerId, payload: offer });
+        } catch (e) {
+          debugLog('error', 'webrtc', 'negotiation failed', String(e));
+        } finally {
+          state.makingOffer = false;
+        }
+      });
+
       pc.addEventListener('connectionstatechange', () => {
         const cs = pc.connectionState;
         debugLog('webrtc', 'peer', cs, { peerId: peerId.slice(0, 8) });
-        if (cs === 'connected') {
-          setConnected(true);
-          setCameraError(null);
+        updateConnected();
+        if (cs === 'connected') setCameraError(null);
+        // 'disconnected' is usually transient — recover with an ICE restart instead of
+        // destroying the peer (the reconcile loop will also retry). Only the impolite
+        // side initiates the restart to avoid both sides offering at once.
+        if ((cs === 'failed' || cs === 'disconnected') && !polite) {
+          void iceRestart(state);
         }
-        // Do NOT tear the peer down on 'disconnected'/'closed' here — a brief
-        // network blip would otherwise permanently drop that player's camera.
-        // The impolite side nudges a recovery with an ICE restart; peers are
-        // only removed when presence reports they actually left the channel.
-        if (cs === 'failed' && !polite) {
-          void pc.restartIce();
-        }
-      });
-
-      pc.addEventListener('iceconnectionstatechange', () => {
-        if (pc.iceConnectionState === 'disconnected' && !polite) {
-          setTimeout(() => {
-            if (pc.iceConnectionState === 'disconnected') {
-              try {
-                pc.restartIce();
-              } catch {
-                /* restartIce unsupported — let presence/teardown handle it */
-              }
-            }
-          }, 2000);
+        if (cs === 'closed') {
+          teardownPeer(peerId);
         }
       });
 
-      if (!polite) await renegotiate(peerId);
+      // Attach now if capture is already running; otherwise this is a no-op and the
+      // tracks get attached later by startCamera()/recover() → negotiationneeded.
+      attachLocalTracks(state);
+
+      return state;
     },
-    [myId, sendSignal, addRemote, renegotiate, ensureIceServers],
+    [
+      myId,
+      sendSignal,
+      addRemote,
+      teardownPeer,
+      updateConnected,
+      iceRestart,
+      attachLocalTracks,
+      ensureIceServers,
+    ],
   );
 
   const handleSignal = useCallback(
     async (signal: WebRTCSignal) => {
-      if (!myId || signal.to !== myId) return;
+      if (!myId || signal.to !== myId || signal.from === myId) return;
+      // Make sure ICE servers are loaded so ensurePeer can build the connection.
+      await ensureIceServers();
       const peerId = signal.from;
-      await ensurePeer(peerId);
-      const state = peersRef.current.get(peerId);
+      const state = ensurePeer(peerId);
       if (!state) return;
       const { pc } = state;
 
@@ -284,54 +347,13 @@ export function useMeshWebRTC(
         }
       }
     },
-    [myId, ensurePeer, flushIce, sendSignal],
+    [myId, ensurePeer, flushIce, sendSignal, ensureIceServers],
   );
-
-  const startCamera = useCallback(async () => {
-    try {
-      setCameraError(null);
-      const peerCount = peersRef.current.size + 1;
-      const tier = videoTierForPeerCount(peerCount);
-      debugLog('webrtc', 'quality', `tier for ${peerCount} peers`, tier);
-
-      const stream = (await mediaDevices.getUserMedia({
-        audio: true,
-        video: camerasEnabled
-          ? {
-              width: { ideal: tier.width },
-              height: { ideal: tier.height },
-              facingMode: 'user',
-              frameRate: { ideal: tier.frameRate },
-            }
-          : false,
-      })) as MediaStream;
-
-      stream.getAudioTracks().forEach((t) => {
-        t.enabled = false;
-      });
-
-      localStreamRef.current = stream;
-      setLocalStream(stream);
-
-      // The camera may start AFTER some peers already connected (presence can
-      // fire first). Add our tracks to those peers and renegotiate so they
-      // actually receive our video — otherwise they'd only ever see a black
-      // tile for us.
-      for (const [peerId, state] of peersRef.current) {
-        stream.getTracks().forEach((track) => state.pc.addTrack(track, stream));
-        void renegotiate(peerId);
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Camera/mic permission denied';
-      debugLog('error', 'media', msg);
-      setCameraError(msg);
-    }
-  }, [camerasEnabled, renegotiate]);
 
   /** Downscale video track when peers join/leave (safe no-op if track doesn't support it). */
   const applyDynamicQuality = useCallback(() => {
     const stream = localStreamRef.current;
-    if (!stream || !camerasEnabled) return;
+    if (!stream || !camerasEnabledRef.current) return;
 
     const videoTrack = stream.getVideoTracks()[0];
     if (!videoTrack) return;
@@ -359,7 +381,7 @@ export function useMeshWebRTC(
           if (sender.track?.kind !== 'video') continue;
           const params = sender.getParameters();
           if (!params.encodings || params.encodings.length === 0) {
-            params.encodings = [{}];
+            params.encodings = [{}] as typeof params.encodings;
           }
           params.encodings[0].maxBitrate = tier.maxBitrateKbps * 1000;
           void sender.setParameters(params);
@@ -368,13 +390,114 @@ export function useMeshWebRTC(
         // Not all RN WebRTC versions support setParameters; safe to skip
       }
     }
-  }, [camerasEnabled]);
+  }, []);
+
+  // Declarative connect: make the set of peer connections match the set of present
+  // participants, and ICE-restart any unhealthy peer. Idempotent — safe to call often.
+  const reconcile = useCallback(() => {
+    const channel = channelRef.current;
+    if (!channel || !myId) return;
+
+    const presence = channel.presenceState() as Record<string, unknown[]>;
+    const present = new Set(Object.keys(presence).filter((id) => id !== myId));
+
+    let changed = false;
+    for (const id of present) {
+      if (!peersRef.current.has(id)) {
+        ensurePeer(id);
+        changed = true;
+      }
+    }
+    for (const id of [...peersRef.current.keys()]) {
+      if (!present.has(id)) {
+        teardownPeer(id);
+        changed = true;
+      }
+    }
+
+    for (const [, state] of peersRef.current) {
+      const cs = state.pc.connectionState;
+      if ((cs === 'failed' || cs === 'disconnected') && !state.polite) {
+        void iceRestart(state);
+      }
+    }
+
+    if (changed) applyDynamicQuality();
+  }, [myId, ensurePeer, teardownPeer, iceRestart, applyDynamicQuality]);
+
+  const startCamera = useCallback(async () => {
+    try {
+      setCameraError(null);
+      const peerCount = peersRef.current.size + 1;
+      const tier = videoTierForPeerCount(peerCount);
+      debugLog('webrtc', 'quality', `tier for ${peerCount} peers`, tier);
+
+      const stream = (await mediaDevices.getUserMedia({
+        audio: true,
+        video: camerasEnabledRef.current
+          ? {
+              width: { ideal: tier.width },
+              height: { ideal: tier.height },
+              facingMode: 'user',
+              frameRate: { ideal: tier.frameRate },
+            }
+          : false,
+      })) as MediaStream;
+
+      // Preserve the mic policy across (re)starts instead of always muting.
+      stream.getAudioTracks().forEach((t) => {
+        t.enabled = micEnabledRef.current;
+      });
+
+      const previous = localStreamRef.current;
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+
+      // Attach/replace tracks on every existing peer. First attach renegotiates
+      // (via negotiationneeded); a replace on restart is seamless.
+      for (const [, state] of peersRef.current) {
+        attachLocalTracks(state);
+      }
+
+      // Stop the old capture only after the new tracks are wired in.
+      if (previous && previous !== stream) {
+        previous.getTracks().forEach((t) => t.stop());
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Camera/mic permission denied';
+      debugLog('error', 'media', msg);
+      setCameraError(msg);
+    }
+  }, [attachLocalTracks]);
 
   const setMicEnabled = useCallback((enabled: boolean) => {
+    micEnabledRef.current = enabled;
     localStreamRef.current?.getAudioTracks().forEach((t) => {
       t.enabled = enabled;
     });
   }, []);
+
+  // Lifecycle recovery: iOS stops capture, suspends the signaling socket, and pauses
+  // timers in the background; none auto-recover. On foreground/network regain,
+  // explicitly re-announce presence → restart capture → reconcile → ICE-restart
+  // unhealthy peers.
+  const recover = useCallback(async () => {
+    debugLog('webrtc', 'recover', 'foreground');
+    try {
+      await channelRef.current?.track({ online_at: new Date().toISOString() });
+    } catch {
+      // channel may be re-subscribing; reconcile/timer will catch up
+    }
+    if (localStreamRef.current) {
+      await startCamera();
+    }
+    reconcile();
+    for (const [, state] of peersRef.current) {
+      if (state.pc.connectionState !== 'connected' && !state.polite) {
+        void iceRestart(state);
+      }
+    }
+  }, [startCamera, reconcile, iceRestart]);
 
   useEffect(() => {
     void ensureIceServers();
@@ -392,27 +515,9 @@ export function useMeshWebRTC(
       .on('broadcast', { event: 'signal' }, ({ payload }) => {
         void handleSignal(payload as WebRTCSignal);
       })
-      .on('presence', { event: 'sync' }, () => {
-        const presence = channel.presenceState() as Record<string, unknown[]>;
-        const online = Object.keys(presence).filter((id) => id !== myId);
-        for (const peerId of online) void ensurePeer(peerId);
-        for (const peerId of peersRef.current.keys()) {
-          if (!online.includes(peerId)) teardownPeer(peerId);
-        }
-        applyDynamicQuality();
-      })
-      .on('presence', { event: 'join' }, ({ key }) => {
-        if (key && key !== myId) {
-          void ensurePeer(key);
-          applyDynamicQuality();
-        }
-      })
-      .on('presence', { event: 'leave' }, ({ key }) => {
-        if (key) {
-          teardownPeer(key);
-          applyDynamicQuality();
-        }
-      })
+      .on('presence', { event: 'sync' }, () => reconcile())
+      .on('presence', { event: 'join' }, () => reconcile())
+      .on('presence', { event: 'leave' }, () => reconcile())
       .subscribe(async (status) => {
         debugLog('webrtc', 'channel', status);
         if (status === 'SUBSCRIBED') {
@@ -422,14 +527,43 @@ export function useMeshWebRTC(
 
     channelRef.current = channel;
 
+    // Reconciliation loop — any missed presence event self-corrects within one tick,
+    // and unhealthy peers get ICE-restarted (covers Wi-Fi↔cellular path changes).
+    const reconcileTimer = setInterval(() => reconcile(), RECONCILE_INTERVAL_MS);
+
+    const appStateSub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') void recover();
+    });
+
+    // Network path changes (Wi-Fi↔cellular, dropout→reconnect) on iOS leave peer
+    // connections in failed/disconnected and the signaling socket stale; nothing
+    // auto-recovers. Trigger recovery the moment connectivity returns or the
+    // transport type changes.
+    let lastNet: { connected: boolean; type: string } = {
+      connected: true,
+      type: 'unknown',
+    };
+    const netInfoUnsub = NetInfo.addEventListener((state: NetInfoState) => {
+      const isConnected = state.isConnected === true;
+      const type = state.type ?? 'unknown';
+      const regained = isConnected && !lastNet.connected;
+      const switched = isConnected && lastNet.connected && type !== lastNet.type;
+      lastNet = { connected: isConnected, type };
+      if (regained || switched) void recover();
+    });
+
     return () => {
+      clearInterval(reconcileTimer);
+      appStateSub.remove();
+      netInfoUnsub();
       channel.unsubscribe();
+      channelRef.current = null;
       for (const peerId of [...peersRef.current.keys()]) teardownPeer(peerId);
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
       setLocalStream(null);
     };
-  }, [gameId, myId, ensurePeer, teardownPeer, handleSignal, applyDynamicQuality]);
+  }, [gameId, myId, handleSignal, reconcile, recover, teardownPeer]);
 
   return {
     localStream,
