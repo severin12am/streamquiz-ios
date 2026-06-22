@@ -130,28 +130,30 @@ export async function updatePlayer(playerId: string, patch: Partial<Player>): Pr
   if (error) throw error;
 }
 
+// Per-round reset as ONE atomic statement, not N separate writes. With many
+// small parallel writes over a flaky connection, some could silently fail and
+// leave a player's previous-round pick in place — which then showed up as a
+// "question that answered itself". A single UPDATE ... WHERE game_id either
+// resets everyone or throws, so there is no partial state.
 export async function resetPlayersForRound(gameId: string): Promise<void> {
-  const players = await fetchPlayers(gameId);
-  await Promise.all(
-    players.map((p) =>
-      updatePlayer(p.id, {
-        mc_index: null,
-        transcript: '',
-        correct: null,
-        done: false,
-      }),
-    ),
-  );
+  const { error } = await getSupabase()
+    .from('players')
+    .update({ mc_index: null, transcript: '', correct: null, done: false })
+    .eq('game_id', gameId);
+  if (error) throw error;
 }
 
 export async function resetPlayersScores(gameId: string): Promise<void> {
-  const players = await fetchPlayers(gameId);
-  await Promise.all(players.map((p) => updatePlayer(p.id, { score: 0 })));
+  const { error } = await getSupabase().from('players').update({ score: 0 }).eq('game_id', gameId);
+  if (error) throw error;
 }
 
 export async function resetPlayersRematch(gameId: string): Promise<void> {
-  const players = await fetchPlayers(gameId);
-  await Promise.all(players.map((p) => updatePlayer(p.id, { rematch: false })));
+  const { error } = await getSupabase()
+    .from('players')
+    .update({ rematch: false })
+    .eq('game_id', gameId);
+  if (error) throw error;
 }
 
 function nextFreeSlot(players: Player[], asHost: boolean): number | null {

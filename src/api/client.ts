@@ -62,23 +62,40 @@ export async function checkAnswer(params: {
   }
 }
 
-export async function fetchIceServers(): Promise<RTCIceServer[]> {
-  const fallback: RTCIceServer[] = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-  ];
+// Extra TURN relays the app ALWAYS adds on top of whatever the server returns.
+// More relay options = more chances one path works on restrictive networks /
+// VPNs (which often block UDP, so TURN-over-TCP/TLS on 443 is what saves the
+// video). The deployed /api/ice-servers currently hands out a single free
+// relay; if it's overloaded the call would otherwise go black.
+const EXTRA_RELAYS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+      'turns:openrelay.metered.ca:443?transport=tcp',
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
 
+function mergeIceServers(serverList: RTCIceServer[]): RTCIceServer[] {
+  const seen = new Set(serverList.map((s) => JSON.stringify(s.urls)));
+  const extras = EXTRA_RELAYS.filter((s) => !seen.has(JSON.stringify(s.urls)));
+  return [...serverList, ...extras];
+}
+
+export async function fetchIceServers(): Promise<RTCIceServer[]> {
   try {
     const res = await fetch(api('/api/ice-servers'), { cache: 'no-store' });
-    if (!res.ok) return fallback;
+    if (!res.ok) return EXTRA_RELAYS;
     const data = (await res.json()) as { iceServers?: RTCIceServer[] };
-    return data.iceServers?.length ? data.iceServers : fallback;
+    return data.iceServers?.length ? mergeIceServers(data.iceServers) : EXTRA_RELAYS;
   } catch {
-    return fallback;
+    return EXTRA_RELAYS;
   }
 }
 

@@ -69,7 +69,22 @@ export function useMeshWebRTC(
   const peersRef = useRef<Map<string, PeerState>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const iceServersRef = useRef<RTCIceServer[]>([]);
+  const iceReadyRef = useRef<Promise<void> | null>(null);
   const channelRef = useRef<ReturnType<ReturnType<typeof getSupabase>['channel']> | null>(null);
+
+  // Guarantee STUN/TURN servers are loaded before any RTCPeerConnection is
+  // built. Without this, presence can fire before fetchIceServers() resolves,
+  // creating a peer with an empty iceServers list — only host candidates, so
+  // the media path never forms across NAT/VPN and the remote tile stays black.
+  const ensureIceServers = useCallback(async () => {
+    if (iceServersRef.current.length) return;
+    if (!iceReadyRef.current) {
+      iceReadyRef.current = fetchIceServers().then((servers) => {
+        iceServersRef.current = servers;
+      });
+    }
+    await iceReadyRef.current;
+  }, []);
 
   const sendSignal = useCallback(
     (signal: WebRTCSignal) => {
@@ -150,6 +165,11 @@ export function useMeshWebRTC(
     async (peerId: string) => {
       if (!myId || peerId === myId || peersRef.current.has(peerId)) return;
 
+      // Wait for ICE servers before constructing the peer. Re-check the map
+      // afterwards since another presence event may have created it meanwhile.
+      await ensureIceServers();
+      if (peersRef.current.has(peerId)) return;
+
       const polite = myId < peerId;
       const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
       const state: PeerState = {
@@ -214,7 +234,7 @@ export function useMeshWebRTC(
 
       if (!polite) await renegotiate(peerId);
     },
-    [myId, sendSignal, addRemote, renegotiate],
+    [myId, sendSignal, addRemote, renegotiate, ensureIceServers],
   );
 
   const handleSignal = useCallback(
@@ -357,10 +377,8 @@ export function useMeshWebRTC(
   }, []);
 
   useEffect(() => {
-    void fetchIceServers().then((servers) => {
-      iceServersRef.current = servers;
-    });
-  }, []);
+    void ensureIceServers();
+  }, [ensureIceServers]);
 
   useEffect(() => {
     if (!gameId || !myId) return;

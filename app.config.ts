@@ -47,7 +47,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
   },
   plugins: [
-    'expo-dev-client',
+    [
+      'expo-dev-client',
+      {
+        // Always show the "Enter URL manually" screen on launch (not the embedded bundle).
+        launchMode: 'launcher',
+      },
+    ],
     'expo-asset',
     'expo-font',
     'expo-localization',

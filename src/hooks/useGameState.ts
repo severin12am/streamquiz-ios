@@ -144,6 +144,13 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
   const actedDeadline = useRef<string | null>(null);
   const earlyDoneRef = useRef<string | null>(null);
   const shrunkDeadline = useRef<string | null>(null);
+  // Round key (`index:phase`) for which we have observed a roster with at least
+  // one player NOT yet answered. This proves the per-round reset has landed and
+  // the picks/done flags we now see belong to THIS round — not stale leftovers
+  // from the previous question. Without it, a fresh round can be resolved (or
+  // its timer shrunk) instantly off the previous round's answers, which looks
+  // like "the question answered itself". See PROJECT.md §7 (Early advance).
+  const freshRosterRound = useRef<string | null>(null);
 
   gameRef.current = game;
   playersRef.current = players;
@@ -264,48 +271,73 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
    * pick. The updateGameIfPhase('question' → ...) compare-and-swap guarantees
    * only one client resolves the round.
    */
-  const resolveMcRound = useCallback(async () => {
-    if (resolvingRef.current) return;
-    resolvingRef.current = true;
-    try {
-      const g = gameRef.current;
-      if (!g) return;
+  const resolveMcRound = useCallback(
+    async (opts?: { requireAllAnswered?: boolean }): Promise<boolean> => {
+      if (resolvingRef.current) return false;
+      resolvingRef.current = true;
+      try {
+        const g = gameRef.current;
+        if (!g) return false;
 
-      const list = await fetchPlayers(g.id);
-      const question = g.questions[g.current_question_index];
-      const correctAnswer = question?.correct_answer ?? '';
+        const list = await fetchPlayers(g.id);
 
-      const correctOf = (p: Player): boolean => {
-        const chosen =
-          p.mc_index !== null && p.mc_index !== undefined
-            ? getMcOptionText(question, p.mc_index)
-            : null;
-        return chosen ? isMcAnswerCorrect(chosen, correctAnswer) : false;
-      };
-      const anyCorrect = list.some(correctOf);
-
-      const won = await updateGameIfPhase(g.id, 'question', {
-        phase: 'result',
-        phase_deadline: deadlineIn(RESULT_TIME_SECONDS),
-        answer_correct: anyCorrect,
-        last_points: anyCorrect ? 1 : 0,
-      });
-      if (!won) return;
-
-      await Promise.all(
-        list.map((p) => {
-          const isCorrect = correctOf(p);
-          return updatePlayer(p.id, {
-            correct: isCorrect,
-            score: isCorrect ? p.score + 1 : p.score,
+        // Early-advance safety: trust the freshly-fetched DB roster, not the
+        // local one that triggered us. If it does NOT actually show everyone
+        // answered, abort — this is the round-boundary race where the previous
+        // round's picks briefly looked like answers for the new question (the
+        // "question answered itself" bug). The deadline path passes no opts and
+        // always resolves.
+        if (opts?.requireAllAnswered && !list.every((p) => hasAnswered(p, g.mc_mode))) {
+          debugLog('game', 'resolve', 'abort early MC: roster not all answered', {
+            qIndex: g.current_question_index,
+            picks: list.map((p) => p.mc_index ?? null),
           });
-        }),
-      );
-      await refreshPlayers();
-    } finally {
-      resolvingRef.current = false;
-    }
-  }, [refreshPlayers]);
+          return false;
+        }
+
+        const question = g.questions[g.current_question_index];
+        const correctAnswer = question?.correct_answer ?? '';
+
+        const correctOf = (p: Player): boolean => {
+          const chosen =
+            p.mc_index !== null && p.mc_index !== undefined
+              ? getMcOptionText(question, p.mc_index)
+              : null;
+          return chosen ? isMcAnswerCorrect(chosen, correctAnswer) : false;
+        };
+        const anyCorrect = list.some(correctOf);
+
+        const won = await updateGameIfPhase(g.id, 'question', {
+          phase: 'result',
+          phase_deadline: deadlineIn(RESULT_TIME_SECONDS),
+          answer_correct: anyCorrect,
+          last_points: anyCorrect ? 1 : 0,
+        });
+        if (!won) return false;
+
+        debugLog('game', 'resolve', 'MC resolved', {
+          qIndex: g.current_question_index,
+          early: Boolean(opts?.requireAllAnswered),
+          picks: list.map((p) => p.mc_index ?? null),
+        });
+
+        await Promise.all(
+          list.map((p) => {
+            const isCorrect = correctOf(p);
+            return updatePlayer(p.id, {
+              correct: isCorrect,
+              score: isCorrect ? p.score + 1 : p.score,
+            });
+          }),
+        );
+        await refreshPlayers();
+        return true;
+      } finally {
+        resolvingRef.current = false;
+      }
+    },
+    [refreshPlayers],
+  );
 
   /**
    * Judge a voice round — re-fetches the game (the local copy may still say
@@ -403,11 +435,28 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
         if (!g) return;
         const roster = playersRef.current;
 
+        // Roster-freshness gate: mark this round "fresh" the moment we see a
+        // roster where someone has NOT answered. At round start the local roster
+        // can still carry the previous round's picks (the reset write hasn't
+        // propagated yet); until we observe a genuinely un-answered roster for
+        // THIS round we must not shrink the timer or resolve early.
+        const inAnswerablePhase = g.phase === 'question' || g.phase === 'answering';
+        const roundKey = `${g.current_question_index}:${g.phase}`;
+        if (
+          inAnswerablePhase &&
+          roster.length > 0 &&
+          roster.some((p) => !hasAnswered(p, g.mc_mode))
+        ) {
+          freshRosterRound.current = roundKey;
+        }
+        const rosterFresh = freshRosterRound.current === roundKey;
+
         // First-answer race: once ANY player answers, cut remaining time to the
         // grace window for everyone else. CAS on the deadline + a per-deadline
         // guard ensure this fires once per round only.
         if (
-          (g.phase === 'question' || g.phase === 'answering') &&
+          inAnswerablePhase &&
+          rosterFresh &&
           g.phase_deadline &&
           shrunkDeadline.current !== g.phase_deadline &&
           roster.some((p) => hasAnswered(p, g.mc_mode)) &&
@@ -420,18 +469,28 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
           return;
         }
 
-        // Early advance: everyone answered before the timer ends. Guarded per
-        // deadline so a stale roster from the previous round can't trigger it.
+        // Early advance: everyone answered before the timer ends. Requires a
+        // confirmed-fresh roster (see above) plus the per-deadline guard so a
+        // stale roster from the previous round can't trigger it.
         const everyoneAnswered =
-          roster.length > 0 && roster.every((p) => hasAnswered(p, g.mc_mode));
+          rosterFresh && roster.length > 0 && roster.every((p) => hasAnswered(p, g.mc_mode));
 
         if (g.phase === 'question' && everyoneAnswered && earlyDoneRef.current !== g.phase_deadline) {
           earlyDoneRef.current = g.phase_deadline;
-          await resolveMcRound();
+          const resolved = await resolveMcRound({ requireAllAnswered: true });
+          // DB said not everyone actually answered (round-boundary race) — clear
+          // the guard so a genuine "all answered" moment can still resolve early.
+          if (!resolved) earlyDoneRef.current = null;
           return;
         }
         if (g.phase === 'answering' && everyoneAnswered && earlyDoneRef.current !== g.phase_deadline) {
           earlyDoneRef.current = g.phase_deadline;
+          // Confirm against the authoritative DB roster before ending the round.
+          const fresh = await fetchPlayers(g.id);
+          if (!fresh.every((p) => hasAnswered(p, false))) {
+            earlyDoneRef.current = null;
+            return;
+          }
           const won = await updateGameIfPhase(g.id, 'answering', {
             phase: 'checking',
             phase_deadline: deadlineIn(CHECK_TIMEOUT_SECONDS),

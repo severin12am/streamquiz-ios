@@ -38,6 +38,7 @@ import { SoundToggle } from '@/components/SoundToggle';
 import { JoinScreen } from '@/components/JoinScreen';
 import { Lobby } from '@/components/Lobby';
 import { CameraGrid } from '@/components/CameraGrid';
+import { CameraPanel } from '@/components/CameraPanel';
 import { QuestionPanel } from '@/components/QuestionPanel';
 import { WinnerScreen } from '@/components/WinnerScreen';
 import type { RootStackParamList } from '@/navigation/types';
@@ -337,12 +338,39 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
   const showWinner = game.phase === 'ended' || game.status === 'ended';
 
+  // WhatsApp-style: opponents fill the screen; my own feed is a small PiP.
+  const others = players.filter((p) => p.id !== me.id);
+  const showSelfPip = others.length > 0;
+  const gridPlayers = showSelfPip ? others : players;
+  const selfAnswering = game.phase === 'answering' && !me.done;
+
+  const sharedPanelProps = {
+    game,
+    question: currentQuestion,
+    players,
+    me,
+    timeLeftMs,
+    typedText,
+    typedMode,
+    speechUnavailable: Boolean(speechError) && game.phase === 'answering',
+    onTypedChange: handleTypedChange,
+    onToggleTypedMode: () => setTypedMode((v) => !v),
+    onSelectMC: (i: number) => void submitMCAnswer(i),
+    onDone: () => void finishAnswer(typedText.trim() || undefined),
+    onPushToTalkIn: () => setPttHeld(true),
+    onPushToTalkOut: () => setPttHeld(false),
+    pttHeld,
+    dark: true as const,
+    t,
+  };
+
   return (
     <View style={styles.root}>
-      {/* Full-bleed camera mesh — the WhatsApp-style video backdrop. */}
+      {/* Full-screen opponent video(s) — the WhatsApp-style group-call backdrop
+          that the quiz floats over. */}
       <View style={styles.cameraLayer}>
         <CameraGrid
-          players={players}
+          players={gridPlayers}
           localStream={localStream}
           remoteStreams={remoteStreams}
           myId={me.id}
@@ -360,38 +388,43 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
         />
       </View>
 
-      <View style={styles.soundToggleWrap}>
+      {showSelfPip ? (
+        <View style={styles.selfPip}>
+          <CameraPanel
+            player={me}
+            stream={localStream}
+            showVideo={camerasEnabled}
+            showResult={game.phase === 'result'}
+            micLive={micPolicy()}
+            cameraBlocked={camerasEnabled && Boolean(cameraError)}
+            micBlocked={Boolean(cameraError)}
+            isAnswering={selfAnswering}
+            mutedToPeers={selfAnswering && !game.mc_mode}
+            answeringLabel={t('playerAnswering')}
+            mutedLabel={t('answeringMutedShort')}
+            fill
+          />
+        </View>
+      ) : null}
+
+      <View style={styles.soundTogglePlaying}>
         <SoundToggle />
       </View>
 
-      {/* Translucent quiz sheet docked over the lower portion of the video. */}
-      <View style={styles.overlaySheet} pointerEvents="box-none">
-        <View style={styles.sheetHandle} />
+      {/* Top overlay: round + question + timer floating near the top. */}
+      <View style={styles.overlayTop} pointerEvents="box-none">
+        <QuestionPanel {...sharedPanelProps} section="top" />
+      </View>
+
+      {/* Bottom overlay: answer buttons / results floating near the bottom. */}
+      <View style={styles.overlayBottom} pointerEvents="box-none">
         <ScrollView
-          style={styles.sheetScroll}
-          contentContainerStyle={styles.sheetContent}
+          style={styles.panelScroll}
+          contentContainerStyle={styles.panelContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <QuestionPanel
-            game={game}
-            question={currentQuestion}
-            players={players}
-            me={me}
-            timeLeftMs={timeLeftMs}
-            typedText={typedText}
-            typedMode={typedMode}
-            speechUnavailable={Boolean(speechError) && game.phase === 'answering'}
-            onTypedChange={handleTypedChange}
-            onToggleTypedMode={() => setTypedMode((v) => !v)}
-            onSelectMC={(i) => void submitMCAnswer(i)}
-            onDone={() => void finishAnswer(typedText.trim() || undefined)}
-            onPushToTalkIn={() => setPttHeld(true)}
-            onPushToTalkOut={() => setPttHeld(false)}
-            pttHeld={pttHeld}
-            dark
-            t={t}
-          />
+          <QuestionPanel {...sharedPanelProps} section="bottom" />
         </ScrollView>
       </View>
       {showWinner ? (
@@ -416,30 +449,52 @@ const styles = StyleSheet.create({
     right: 12,
     zIndex: 20,
   },
-  cameraLayer: { flex: 1, padding: 8, paddingTop: 44 },
-  overlaySheet: {
+  // In-game: sit just below the (taller) self-camera PiP at the top-right.
+  soundTogglePlaying: {
+    position: 'absolute',
+    top: 166,
+    right: 14,
+    zIndex: 20,
+  },
+  cameraLayer: { ...StyleSheet.absoluteFillObject },
+  selfPip: {
+    position: 'absolute',
+    right: 10,
+    top: 8,
+    width: 116,
+    height: 150,
+    borderRadius: 12,
+    overflow: 'hidden',
+    zIndex: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  // Top overlay lives in the column to the LEFT of the self-camera PiP, so the
+  // question can use most of the width while the bigger PiP sits top-right.
+  overlayTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 134,
+    alignItems: 'stretch',
+    paddingTop: 10,
+    paddingLeft: 12,
+    paddingRight: 4,
+    zIndex: 10,
+  },
+  overlayBottom: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: '66%',
-    backgroundColor: 'rgba(9,13,11,0.82)',
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    borderTopWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    paddingTop: 8,
+    maxHeight: '52%',
+    zIndex: 10,
   },
-  sheetHandle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.28)',
-    marginBottom: 4,
-  },
-  sheetScroll: { flexGrow: 0 },
-  sheetContent: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 28, gap: 12 },
+  panelScroll: { flexGrow: 0 },
+  panelContent: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 24, gap: 10 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, gap: 12 },
   muted: { color: colors.textMuted },
   error: { color: colors.wrong, textAlign: 'center' },

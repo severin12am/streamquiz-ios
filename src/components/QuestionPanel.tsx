@@ -37,6 +37,11 @@ interface Props {
   pttHeld?: boolean;
   /** Render for the translucent camera overlay (light text, no card chrome). */
   dark?: boolean;
+  /**
+   * Which slice to render when floating over the video:
+   * 'top' = round + question + timer, 'bottom' = answers/results, 'all' = both.
+   */
+  section?: 'all' | 'top' | 'bottom';
   t: TranslateFn;
 }
 
@@ -87,6 +92,7 @@ export function QuestionPanel({
   onPushToTalkOut,
   pttHeld = false,
   dark = false,
+  section = 'all',
   t,
 }: Props) {
   const idx = game.current_question_index + 1;
@@ -100,134 +106,158 @@ export function QuestionPanel({
     !!question?.options &&
     (game.phase === 'question' || (game.phase === 'result' && game.mc_mode));
 
+  const showTop = section === 'all' || section === 'top';
+  const showBottom = section === 'all' || section === 'bottom';
+  const inQuestionFlow = ['question', 'answering', 'result'].includes(game.phase) && !!question;
+
   return (
     <View style={[styles.panel, dark && styles.panelDark]}>
-      <Text style={[styles.round, dark && styles.textLightMuted]}>
-        {t('round')} {idx} {t('of')} {game.num_questions}
-      </Text>
-
-      {game.phase === 'thinking' ? (
-        <View style={styles.center}>
-          <Text style={[styles.thinking, dark && styles.textLight]}>{t('thinking')}</Text>
-          <CountdownTimer timeLeftMs={timeLeftMs} totalMs={THINK_TIME_SECONDS * 1000} />
-        </View>
-      ) : null}
-
-      {game.phase === 'checking' ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.accentBright} size="large" />
-          <Text style={[styles.checking, dark && styles.textLightMuted]}>{t('checking')}</Text>
-        </View>
-      ) : null}
-
-      {['question', 'answering', 'result'].includes(game.phase) && question ? (
+      {showTop ? (
         <>
-          <Text style={[styles.question, dark && styles.textLight]}>{question.question}</Text>
-          {['question', 'answering'].includes(game.phase) ? (
-            <CountdownTimer
-              timeLeftMs={timeLeftMs}
-              totalMs={totalMsForPhase(game.phase, game.mc_mode)}
-            />
-          ) : null}
+          <View style={dark ? styles.roundChip : undefined}>
+            <Text style={[styles.round, dark && styles.textLightMuted]}>
+              {t('round')} {idx} {t('of')} {game.num_questions}
+            </Text>
+          </View>
 
-          {game.phase === 'question' && game.mc_mode ? (
-            <View style={styles.mcStatus}>
-              {iHavePicked ? (
-                <Text style={[styles.mcStatusLocked, dark && styles.textLightMuted]}>
-                  {t('answerLocked')} · {secondsLeft}
-                  {t('secondsLeftSuffix')}
-                </Text>
-              ) : someonePicked ? (
-                <Text style={styles.mcStatusUrgent}>
-                  {t('someoneAnswered')} · {secondsLeft}
-                  {t('secondsLeftSuffix')}
-                </Text>
-              ) : (
-                <Text style={styles.mcStatusGo}>{t('answerNow')}</Text>
-              )}
+          {game.phase === 'thinking' ? (
+            <View style={[styles.center, dark && styles.chip]}>
+              <Text style={[styles.thinking, dark && styles.textLight]}>{t('thinking')}</Text>
+              <CountdownTimer timeLeftMs={timeLeftMs} totalMs={THINK_TIME_SECONDS * 1000} />
             </View>
           ) : null}
 
-          {showMcGrid && question.options ? (
-            <MCOptions
-              options={question.options}
-              correctAnswer={game.phase === 'result' ? question.correct_answer : undefined}
-              myPick={me?.mc_index ?? null}
-              picksByOption={game.phase === 'result' ? picksByOption : undefined}
-              canSelect={mcCanSelect}
-              youLabel={t('youPick')}
-              onSelect={onSelectMC}
-            />
-          ) : null}
-
-          {game.phase === 'answering' ? (
-            <View style={styles.voiceBox}>
-              {me?.done ? (
-                <View style={styles.answeringStatusWait}>
-                  <Text style={styles.answeringStatusText}>{t('answeringWaiting')}</Text>
-                </View>
-              ) : (
-                <View style={styles.answeringStatusMuted}>
-                  <MaterialIcons name="mic-off" size={22} color={colors.accent} />
-                  <Text style={styles.answeringStatusText}>{t('answeringMuted')}</Text>
-                </View>
-              )}
-              {speechUnavailable ? (
-                <Text style={styles.speechHint}>{t('speechUnavailable')}</Text>
-              ) : null}
-              <TextInput
-                style={styles.input}
-                value={typedText}
-                onChangeText={onTypedChange}
-                placeholder={t('speakAnswer')}
-                placeholderTextColor={colors.textMuted}
-                multiline
-                editable={!me?.done}
-              />
-              <View style={styles.voiceActions}>
-                <KeycapButton variant="secondary" onPress={onToggleTypedMode}>
-                  {typedMode ? t('speakInstead') : t('typeInstead')}
-                </KeycapButton>
-                {onPushToTalkIn && onPushToTalkOut ? (
-                  <KeycapButton
-                    variant={pttHeld ? 'success' : 'secondary'}
-                    onPressIn={onPushToTalkIn}
-                    onPressOut={onPushToTalkOut}
-                  >
-                    {t('pushToTalk')}
-                  </KeycapButton>
-                ) : null}
-                <KeycapButton variant="primary" disabled={!!me?.done} onPress={onDone}>
-                  {t('done')}
-                </KeycapButton>
-              </View>
-            </View>
-          ) : null}
-
-          {game.phase === 'result' && !game.mc_mode ? (
-            <View style={styles.resultBox}>
-              <Text style={styles.resultTitle}>{t('result')}</Text>
-              {[...players]
-                .sort((a, b) => a.slot - b.slot)
-                .map((p) => (
-                  <VoiceResultRow
-                    key={p.id}
-                    name={p.name}
-                    isMe={p.id === me?.id}
-                    youLabel={t('youPick')}
-                    colour={playerColor(p.slot)}
-                    text={p.transcript}
-                    correct={p.correct}
-                    emptyHint={t('noAnswer')}
+          {inQuestionFlow && question ? (
+            <>
+              {['question', 'answering'].includes(game.phase) ? (
+                <View style={styles.timerLine}>
+                  <CountdownTimer
+                    variant="bar"
+                    timeLeftMs={timeLeftMs}
+                    totalMs={totalMsForPhase(game.phase, game.mc_mode)}
                   />
-                ))}
-              {question?.correct_answer ? (
-                <View style={styles.correctAnswerBox}>
-                  <Text style={styles.correctAnswerLabel}>{t('correctAnswerTitle')}</Text>
-                  <Text style={styles.correctAnswerText}>{question.correct_answer}</Text>
                 </View>
               ) : null}
+              <View style={dark ? styles.chip : undefined}>
+                <Text style={[styles.question, dark && styles.textLight]}>{question.question}</Text>
+              </View>
+            </>
+          ) : null}
+        </>
+      ) : null}
+
+      {showBottom ? (
+        <>
+          {game.phase === 'checking' ? (
+            <View style={[styles.center, dark && styles.chip]}>
+              <ActivityIndicator color={colors.accentBright} size="large" />
+              <Text style={[styles.checking, dark && styles.textLightMuted]}>{t('checking')}</Text>
             </View>
+          ) : null}
+
+          {inQuestionFlow ? (
+            <>
+              {game.phase === 'question' && game.mc_mode ? (
+                <View style={[styles.mcStatus, dark && styles.chipTight]}>
+                  {iHavePicked ? (
+                    <Text style={[styles.mcStatusLocked, dark && styles.textLightMuted]}>
+                      {t('answerLocked')} · {secondsLeft}
+                      {t('secondsLeftSuffix')}
+                    </Text>
+                  ) : someonePicked ? (
+                    <Text style={styles.mcStatusUrgent}>
+                      {t('someoneAnswered')} · {secondsLeft}
+                      {t('secondsLeftSuffix')}
+                    </Text>
+                  ) : (
+                    <Text style={styles.mcStatusGo}>{t('answerNow')}</Text>
+                  )}
+                </View>
+              ) : null}
+
+              {showMcGrid && question.options ? (
+                <MCOptions
+                  options={question.options}
+                  correctAnswer={game.phase === 'result' ? question.correct_answer : undefined}
+                  myPick={me?.mc_index ?? null}
+                  picksByOption={game.phase === 'result' ? picksByOption : undefined}
+                  canSelect={mcCanSelect}
+                  youLabel={t('youPick')}
+                  translucent={dark}
+                  onSelect={onSelectMC}
+                />
+              ) : null}
+
+              {game.phase === 'answering' ? (
+                <View style={[styles.voiceBox, dark && styles.chip]}>
+                  {me?.done ? (
+                    <View style={styles.answeringStatusWait}>
+                      <Text style={styles.answeringStatusText}>{t('answeringWaiting')}</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.answeringStatusMuted}>
+                      <MaterialIcons name="mic-off" size={22} color={colors.accent} />
+                      <Text style={styles.answeringStatusText}>{t('answeringMuted')}</Text>
+                    </View>
+                  )}
+                  {speechUnavailable ? (
+                    <Text style={styles.speechHint}>{t('speechUnavailable')}</Text>
+                  ) : null}
+                  <TextInput
+                    style={styles.input}
+                    value={typedText}
+                    onChangeText={onTypedChange}
+                    placeholder={t('speakAnswer')}
+                    placeholderTextColor={colors.textMuted}
+                    multiline
+                    editable={!me?.done}
+                  />
+                  <View style={styles.voiceActions}>
+                    <KeycapButton variant="secondary" onPress={onToggleTypedMode}>
+                      {typedMode ? t('speakInstead') : t('typeInstead')}
+                    </KeycapButton>
+                    {onPushToTalkIn && onPushToTalkOut ? (
+                      <KeycapButton
+                        variant={pttHeld ? 'success' : 'secondary'}
+                        onPressIn={onPushToTalkIn}
+                        onPressOut={onPushToTalkOut}
+                      >
+                        {t('pushToTalk')}
+                      </KeycapButton>
+                    ) : null}
+                    <KeycapButton variant="primary" disabled={!!me?.done} onPress={onDone}>
+                      {t('done')}
+                    </KeycapButton>
+                  </View>
+                </View>
+              ) : null}
+
+              {game.phase === 'result' && !game.mc_mode ? (
+                <View style={[styles.resultBox, dark && styles.chip]}>
+                  <Text style={styles.resultTitle}>{t('result')}</Text>
+                  {[...players]
+                    .sort((a, b) => a.slot - b.slot)
+                    .map((p) => (
+                      <VoiceResultRow
+                        key={p.id}
+                        name={p.name}
+                        isMe={p.id === me?.id}
+                        youLabel={t('youPick')}
+                        colour={playerColor(p.slot)}
+                        text={p.transcript}
+                        correct={p.correct}
+                        emptyHint={t('noAnswer')}
+                      />
+                    ))}
+                  {question?.correct_answer ? (
+                    <View style={styles.correctAnswerBox}>
+                      <Text style={styles.correctAnswerLabel}>{t('correctAnswerTitle')}</Text>
+                      <Text style={styles.correctAnswerText}>{question.correct_answer}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+            </>
           ) : null}
         </>
       ) : null}
@@ -293,8 +323,35 @@ const styles = StyleSheet.create({
     padding: 4,
     flex: 0,
   },
-  textLight: { color: '#eef3ec' },
-  textLightMuted: { color: 'rgba(238,243,236,0.72)' },
+  textLight: {
+    color: '#eef3ec',
+    textShadowColor: 'rgba(0,0,0,0.65)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  textLightMuted: {
+    color: 'rgba(238,243,236,0.82)',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  // Translucent "chips" behind individual overlay elements so the video shows
+  // through the gaps while keeping text readable.
+  chip: {
+    backgroundColor: 'rgba(9,13,11,0.5)',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  chipTight: {
+    backgroundColor: 'rgba(9,13,11,0.5)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  roundChip: { alignSelf: 'center' },
+  timerLine: { marginBottom: 8, paddingHorizontal: 4 },
   round: { color: colors.textMuted, fontSize: 13, textAlign: 'center' },
   center: { alignItems: 'center', gap: 12, paddingVertical: 24 },
   thinking: { color: colors.text, fontSize: 20, fontWeight: '600' },

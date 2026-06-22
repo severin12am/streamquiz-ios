@@ -62,6 +62,8 @@ export function RootNavigator() {
           headerStyle: { backgroundColor: colors.bgCard },
           headerTintColor: colors.text,
           contentStyle: { backgroundColor: colors.bg },
+          // Show only the chevron, not the English word "Back".
+          headerBackButtonDisplayMode: 'minimal',
         }}
       >
         <Stack.Screen
@@ -86,7 +88,7 @@ export function RootNavigator() {
           component={DebugScreen}
           options={{ title: 'Debug logs' }}
         />
-        <Stack.Screen name="Game" options={{ title: 'Game' }}>
+        <Stack.Screen name="Game" options={{ title: t('gameTitle') }}>
           {(props) => {
             const { gameId, asHost } = props.route.params;
             return <GameScreen gameId={gameId} clientId={clientId} asHost={asHost} />;

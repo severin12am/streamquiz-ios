@@ -41,7 +41,9 @@ export function CameraGrid({
   t,
 }: Props) {
   const count = players.length;
-  const columns = count <= 2 ? 1 : count <= 4 ? 2 : 3;
+  // Fill mode (WhatsApp-style background) shows opponents only — a single
+  // opponent fills the screen, 2+ tile into a 2-column grid (handles up to 6).
+  const columns = fill ? (count <= 1 ? 1 : 2) : count <= 2 ? 1 : count <= 4 ? 2 : 3;
   const showAnswered = phase === 'question' || phase === 'answering';
 
   const renderTile = (p: Player) => {

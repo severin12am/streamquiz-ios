@@ -1,10 +1,10 @@
 /**
- * Multiple choice options — keycap press + reveal parity with web MCOptions.tsx.
+ * Multiple choice options — flat 2×2 grid of compact white cards.
+ * Black text on white, no shadows; reveal colors + per-option picker avatars.
  */
 import React from 'react';
-import { Text, StyleSheet, View } from 'react-native';
+import { Text, StyleSheet, View, Pressable } from 'react-native';
 import { playerInitial } from '@/lib/player-colors';
-import { KeycapButton, type KeycapVariant } from '@/components/KeycapButton';
 import { colors } from '@/theme';
 
 export interface OptionPick {
@@ -23,6 +23,8 @@ interface Props {
   picksByOption?: OptionPick[][];
   canSelect: boolean;
   youLabel?: string;
+  /** Render as translucent dark cards so the video shows through (overlay mode). */
+  translucent?: boolean;
   onSelect: (index: number) => void;
 }
 
@@ -33,6 +35,7 @@ export function MCOptions({
   picksByOption,
   canSelect,
   youLabel = 'You',
+  translucent = false,
   onSelect,
 }: Props) {
   const revealed = correctAnswer != null;
@@ -45,74 +48,58 @@ export function MCOptions({
         const isWrongPick = revealed && pickedByMe && !isCorrect;
         const picks = picksByOption?.[i] ?? [];
 
-        let variant: KeycapVariant = 'secondary';
-        if (revealed) {
-          variant = isCorrect
-            ? 'revealedCorrect'
-            : isWrongPick
-              ? 'revealedWrong'
-              : 'revealedNeutral';
-        } else if (pickedByMe) {
-          variant = 'primary';
-        }
-
-        const badgeStyle = isCorrect
-          ? styles.badgeCorrect
-          : isWrongPick
-            ? styles.badgeWrong
-            : pickedByMe && !revealed
-              ? styles.badgeSelected
-              : styles.badge;
+        const boxStyle = [
+          styles.box,
+          translucent && styles.boxTranslucent,
+          pickedByMe && !revealed && styles.boxSelected,
+          isCorrect && styles.boxCorrect,
+          isWrongPick && styles.boxWrong,
+        ];
+        const badgeStyle = [
+          styles.badge,
+          pickedByMe && !revealed && styles.badgeSelected,
+          isCorrect && styles.badgeCorrect,
+          isWrongPick && styles.badgeWrong,
+        ];
+        const badgeOn = (pickedByMe && !revealed) || isCorrect || isWrongPick;
 
         return (
-          <KeycapButton
+          <Pressable
             key={i}
-            variant={variant}
-            locked={revealed}
-            disabled={!canSelect && !revealed}
+            disabled={!canSelect}
             onPress={() => canSelect && onSelect(i)}
-            contentStyle={styles.optionInner}
-            textStyle={styles.optionText}
+            style={({ pressed }) => [...boxStyle, pressed && canSelect && styles.boxPressed]}
           >
             <View style={styles.row}>
-              <View style={[styles.badge, badgeStyle]}>
-                <Text
-                  style={[
-                    styles.badgeText,
-                    (isCorrect || isWrongPick || (pickedByMe && !revealed)) && styles.badgeTextOn,
-                  ]}
-                >
-                  {LABELS[i]}
-                </Text>
+              <View style={badgeStyle}>
+                <Text style={[styles.badgeText, badgeOn && styles.badgeTextOn]}>{LABELS[i]}</Text>
               </View>
-              <Text style={[styles.text, revealed && { color: colors.text }]} numberOfLines={4}>
+              <Text style={[styles.text, translucent && styles.textTranslucent]} numberOfLines={3}>
                 {option}
               </Text>
-              <View style={styles.tags}>
-                {pickedByMe && !revealed ? (
-                  <Text style={styles.youTag}>{youLabel}</Text>
-                ) : null}
-                {revealed && picks.length > 0 ? (
-                  <View style={styles.avatarRow}>
-                    {picks.map((pick) => (
-                      <View
-                        key={pick.id}
-                        style={[
-                          styles.avatar,
-                          { backgroundColor: pick.colour },
-                          pick.isMe && styles.avatarMe,
-                        ]}
-                      >
-                        <Text style={styles.avatarText}>{playerInitial(pick.name)}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-                {isCorrect ? <Text style={styles.markCorrect}>✓</Text> : null}
-                {isWrongPick ? <Text style={styles.markWrong}>✗</Text> : null}
-              </View>
+              {isCorrect ? <Text style={styles.markCorrect}>✓</Text> : null}
+              {isWrongPick ? <Text style={styles.markWrong}>✗</Text> : null}
             </View>
-          </KeycapButton>
+
+            {pickedByMe && !revealed ? <Text style={styles.youTag}>{youLabel}</Text> : null}
+
+            {revealed && picks.length > 0 ? (
+              <View style={styles.avatarRow}>
+                {picks.map((pick) => (
+                  <View
+                    key={pick.id}
+                    style={[
+                      styles.avatar,
+                      { backgroundColor: pick.colour },
+                      pick.isMe && styles.avatarMe,
+                    ]}
+                  >
+                    <Text style={styles.avatarText}>{playerInitial(pick.name)}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </Pressable>
         );
       })}
     </View>
@@ -120,50 +107,70 @@ export function MCOptions({
 }
 
 const styles = StyleSheet.create({
-  grid: { gap: 10 },
-  optionInner: {
-    alignItems: 'stretch',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 8,
   },
-  optionText: { textAlign: 'left' },
-  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, width: '100%' },
+  box: {
+    width: '48.5%',
+    minHeight: 46,
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e3e8e0',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+  },
+  boxPressed: { opacity: 0.7 },
+  boxTranslucent: {
+    backgroundColor: 'rgba(12,16,15,0.55)',
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  boxSelected: { borderColor: colors.accent, backgroundColor: '#e7f1ef' },
+  boxCorrect: { borderColor: colors.correct, backgroundColor: '#e4f6ec' },
+  boxWrong: { borderColor: colors.wrong, backgroundColor: '#fbe9e6' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   badge: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.bgElevated,
+    backgroundColor: '#eef2ec',
   },
   badgeSelected: { backgroundColor: colors.accent },
   badgeCorrect: { backgroundColor: colors.correct },
   badgeWrong: { backgroundColor: colors.wrong },
-  badgeText: { color: colors.textSecondary, fontWeight: '700', fontSize: 13 },
-  badgeTextOn: { color: colors.onPrimary },
-  text: { color: colors.text, flex: 1, fontSize: 15, lineHeight: 20 },
-  tags: { alignItems: 'flex-end', gap: 4, minWidth: 28 },
+  badgeText: { color: colors.textSecondary, fontWeight: '700', fontSize: 12 },
+  badgeTextOn: { color: '#ffffff' },
+  text: { color: '#1d2b27', flex: 1, fontSize: 13, lineHeight: 17, fontWeight: '500' },
+  textTranslucent: {
+    color: '#f3f7f4',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  markCorrect: { color: colors.correct, fontSize: 15, fontWeight: '800' },
+  markWrong: { color: colors.wrong, fontSize: 15, fontWeight: '800' },
   youTag: {
-    fontSize: 10,
+    marginTop: 6,
+    fontSize: 9,
     fontWeight: '700',
     color: colors.accent,
-    backgroundColor: colors.bg,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    overflow: 'hidden',
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  avatarRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 4 },
+  avatarRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
   avatar: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarMe: { borderWidth: 2, borderColor: colors.text },
-  avatarText: { color: colors.onPrimary, fontSize: 9, fontWeight: '700' },
-  markCorrect: { color: colors.correct, fontSize: 18, fontWeight: '700' },
-  markWrong: { color: colors.wrong, fontSize: 18, fontWeight: '700' },
+  avatarText: { color: '#ffffff', fontSize: 8, fontWeight: '700' },
 });

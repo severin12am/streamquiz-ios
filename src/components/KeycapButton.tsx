@@ -101,6 +101,8 @@ interface Props {
   contentStyle?: ViewStyle;
   textStyle?: TextStyle;
   compact?: boolean;
+  /** Drop the 3D stem + drop shadow (flat surface, e.g. floating icon toggles). */
+  flat?: boolean;
 }
 
 export function KeycapButton({
@@ -116,6 +118,7 @@ export function KeycapButton({
   contentStyle,
   textStyle,
   compact,
+  flat,
 }: Props) {
   const y = useRef(new Animated.Value(locked ? TRAVEL : 0)).current;
   const face = FACES[variant];
@@ -155,12 +158,13 @@ export function KeycapButton({
       }}
       style={[styles.hit, inactive && styles.disabled, style]}
     >
-      <View style={[styles.stack, compact && styles.stackCompact]}>
-        <View style={[styles.stem, { backgroundColor: stemBg }]} />
+      <View style={[styles.stack, compact && styles.stackCompact, flat && styles.stackFlat]}>
+        {flat ? null : <View style={[styles.stem, { backgroundColor: stemBg }]} />}
         <Animated.View
           style={[
             styles.face,
             compact && styles.faceCompact,
+            flat && styles.faceFlat,
             {
               backgroundColor: faceBg,
               borderColor: faceBorder,
@@ -190,6 +194,9 @@ const styles = StyleSheet.create({
   stackCompact: {
     paddingBottom: TRAVEL + 2,
   },
+  stackFlat: {
+    paddingBottom: 0,
+  },
   stem: {
     position: 'absolute',
     left: 2,
@@ -211,6 +218,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 6,
     elevation: 4,
+  },
+  faceFlat: {
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
   faceCompact: {
     paddingVertical: 8,

@@ -19,6 +19,7 @@ export function SoundToggle({ style }: Props) {
     <KeycapButton
       variant="secondary"
       compact
+      flat
       style={style}
       accessibilityLabel={muted ? 'Unmute sounds' : 'Mute sounds'}
       onPress={() => {

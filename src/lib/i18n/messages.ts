@@ -1,6 +1,7 @@
 const en = {
   appName: 'WhoSmarter',
   pageTitle: 'WhoSmarter — Live Quiz Show',
+  gameTitle: 'Game',
   homeSteps: 'Create a custom quiz · Invite your friends · Play',
   createChallenge: 'Create challenge',
   topic: 'Topic',
@@ -107,6 +108,7 @@ const ru: typeof en = {
   ...en,
   appName: 'WhoSmarter',
   pageTitle: 'WhoSmarter — Живая викторина',
+  gameTitle: 'Игра',
   homeSteps: 'Создайте викторину · Пригласите друзей · Играйте',
   createChallenge: 'Создать викторину',
   topic: 'Тема',
@@ -210,6 +212,7 @@ const ru: typeof en = {
 const es: typeof en = {
   ...en,
   pageTitle: 'WhoSmarter — Concurso en vivo',
+  gameTitle: 'Juego',
   homeSteps: 'Crea un quiz personalizado · Invita a tus amigos · Juega',
   createChallenge: 'Crear desafío',
   topic: 'Tema',
@@ -301,6 +304,7 @@ const es: typeof en = {
 const fr: typeof en = {
   ...en,
   pageTitle: 'WhoSmarter — Quiz en direct',
+  gameTitle: 'Partie',
   homeSteps: 'Créez un quiz sur mesure · Invitez vos amis · Jouez',
   createChallenge: 'Créer un défi',
   topic: 'Sujet',
@@ -392,6 +396,7 @@ const fr: typeof en = {
 const de: typeof en = {
   ...en,
   pageTitle: 'WhoSmarter — Live-Quizshow',
+  gameTitle: 'Spiel',
   homeSteps: 'Quiz erstellen · Freunde einladen · Spielen',
   createChallenge: 'Quiz erstellen',
   topic: 'Thema',
@@ -483,6 +488,7 @@ const de: typeof en = {
 const ja: typeof en = {
   ...en,
   pageTitle: 'WhoSmarter — ライブクイズショー',
+  gameTitle: 'ゲーム',
   homeSteps: 'クイズを作成 · 友達を招待 · プレイ',
   createChallenge: 'クイズを作成',
   topic: 'テーマ',
@@ -574,6 +580,7 @@ const ja: typeof en = {
 const ar: typeof en = {
   ...en,
   pageTitle: 'WhoSmarter — مسابقة مباشرة',
+  gameTitle: 'لعبة',
   homeSteps: 'أنشئ اختبارًا مخصصًا · ادعُ أصدقاءك · العب',
   createChallenge: 'إنشاء تحدي',
   topic: 'الموضوع',
