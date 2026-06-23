@@ -62,24 +62,16 @@ export async function checkAnswer(params: {
   }
 }
 
-// Extra TURN relays the app ALWAYS adds on top of whatever the server returns.
-// More relay options = more chances one path works on restrictive networks /
-// VPNs (which often block UDP, so TURN-over-TCP/TLS on 443 is what saves the
-// video). The deployed /api/ice-servers currently hands out a single free
-// relay; if it's overloaded the call would otherwise go black.
+// STUN we always add on top of whatever the server returns (harmless, helps
+// srflx candidate discovery). The real TURN relay must come from the server's
+// /api/ice-servers (Metered creds) — see help_with_fixing_camera_issues.md §7.
+// NOTE: we intentionally do NOT add openrelay.metered.ca here — Metered
+// discontinued that free project, so it only wastes ICE-gathering time on
+// failed TURN allocations. If the server has no working TURN, fix the Netlify
+// METERED_* env vars rather than relying on a dead public relay.
 const EXTRA_RELAYS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  {
-    urls: [
-      'turn:openrelay.metered.ca:80',
-      'turn:openrelay.metered.ca:443',
-      'turn:openrelay.metered.ca:443?transport=tcp',
-      'turns:openrelay.metered.ca:443?transport=tcp',
-    ],
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
 ];
 
 function mergeIceServers(serverList: RTCIceServer[]): RTCIceServer[] {

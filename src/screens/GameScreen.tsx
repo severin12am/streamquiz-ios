@@ -211,8 +211,8 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
   }, [game, me, players, locale, rematch]);
 
   useEffect(() => {
-    if (me) void startCamera();
-  }, [me, startCamera]);
+    if (me?.id) void startCamera();
+  }, [me?.id, startCamera]);
 
   // Voice answering uses Apple Speech — keep WebRTC mic off during that phase to avoid iOS audio fights.
   const micPolicy = useCallback(() => {
