@@ -37,21 +37,33 @@ import {
   updatePlayer,
 } from '@/lib/supabase';
 import { debugLog } from '@/lib/debug-log';
-import type { Game, Player, Question } from '@/lib/types';
+import type { Game, GameMode, Player, Question } from '@/lib/types';
 
 // MARK: - Parity timing constants (must match web hooks/useGameState.ts)
 
-export const THINK_TIME_SECONDS = 5;
-export const QUESTION_TIME_SECONDS = 15;
-export const VOICE_ANSWER_SECONDS = 12;
+export const QUESTION_TIME_SECONDS = 20;
+export const VOICE_ANSWER_SECONDS = 20;
 export const RESULT_TIME_SECONDS = 5;
 export const CHECK_TIMEOUT_SECONDS = 15;
+
+// Legacy only — used by 'think' / 'classic' rows, NOT by regular/hardcore.
+export const THINK_TIME_SECONDS = 5;
 export const FIRST_ANSWER_GRACE_SECONDS = 4;
 
 export const POLL_INTERVAL_MS = 2500;
 export const TICK_INTERVAL_MS = 100;
 export const MAX_INIT_ATTEMPTS = 5;
 export const INIT_RETRY_DELAY_MS = 1200;
+
+/** Legacy timer-shrink behavior: only think/classic cut the deadline on first answer. */
+export function shrinksOnFirstAnswer(mode: GameMode): boolean {
+  return mode === 'think' || mode === 'classic';
+}
+
+/** Hardcore: only the single earliest correct answer scores; answers lock on submit. */
+function answeredMs(player: Player): number {
+  return player.answered_at ? new Date(player.answered_at).getTime() : Infinity;
+}
 
 // MARK: - Pure phase patches (unit-tested; used by startGame + advanceToNext)
 
@@ -307,16 +319,27 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
         };
         const anyCorrect = list.some(correctOf);
 
+        // Hardcore: only the single earliest correct answer scores (smallest
+        // answered_at among correct players). Every other mode: all correct score.
+        const winnerId =
+          g.game_mode === 'hardcore'
+            ? (list
+                .filter(correctOf)
+                .sort((a, b) => answeredMs(a) - answeredMs(b))[0]?.id ?? null)
+            : null;
+        const scoredAny = g.game_mode === 'hardcore' ? winnerId !== null : anyCorrect;
+
         const won = await updateGameIfPhase(g.id, 'question', {
           phase: 'result',
           phase_deadline: deadlineIn(RESULT_TIME_SECONDS),
           answer_correct: anyCorrect,
-          last_points: anyCorrect ? 1 : 0,
+          last_points: scoredAny ? 1 : 0,
         });
         if (!won) return false;
 
         debugLog('game', 'resolve', 'MC resolved', {
           qIndex: g.current_question_index,
+          mode: g.game_mode,
           early: Boolean(opts?.requireAllAnswered),
           picks: list.map((p) => p.mc_index ?? null),
         });
@@ -324,9 +347,12 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
         await Promise.all(
           list.map((p) => {
             const isCorrect = correctOf(p);
+            // Hardcore awards the point only to the earliest correct player, but
+            // still records `correct` on everyone for the reveal UI.
+            const earnsPoint = g.game_mode === 'hardcore' ? p.id === winnerId : isCorrect;
             return updatePlayer(p.id, {
               correct: isCorrect,
-              score: isCorrect ? p.score + 1 : p.score,
+              score: earnsPoint ? p.score + 1 : p.score,
             });
           }),
         );
@@ -357,8 +383,9 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
 
       const results = await Promise.all(
         list.map(async (p) => {
+          const answeredAt = answeredMs(p);
           const transcript = (p.transcript ?? '').trim();
-          if (!transcript) return { id: p.id, score: p.score, correct: false };
+          if (!transcript) return { id: p.id, score: p.score, correct: false, answeredAt };
           try {
             const result = await checkAnswer({
               question: question.question,
@@ -366,26 +393,36 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
               accepted_answers: question.accepted_answers,
               transcript,
             });
-            return { id: p.id, score: p.score, correct: result.correct };
+            return { id: p.id, score: p.score, correct: result.correct, answeredAt };
           } catch {
-            return { id: p.id, score: p.score, correct: false };
+            return { id: p.id, score: p.score, correct: false, answeredAt };
           }
         }),
       );
       const anyCorrect = results.some((r) => r.correct);
 
+      // Hardcore: only the earliest correct transcript scores.
+      const winnerId =
+        g.game_mode === 'hardcore'
+          ? (results
+              .filter((r) => r.correct)
+              .sort((a, b) => a.answeredAt - b.answeredAt)[0]?.id ?? null)
+          : null;
+      const scoredAny = g.game_mode === 'hardcore' ? winnerId !== null : anyCorrect;
+
       const won = await updateGameIfPhase(g.id, 'checking', {
         phase: 'result',
         phase_deadline: deadlineIn(RESULT_TIME_SECONDS),
         answer_correct: anyCorrect,
-        last_points: anyCorrect ? 1 : 0,
+        last_points: scoredAny ? 1 : 0,
       });
       if (!won) return;
 
       await Promise.all(
-        results.map((r) =>
-          updatePlayer(r.id, { correct: r.correct, score: r.score + (r.correct ? 1 : 0) }),
-        ),
+        results.map((r) => {
+          const earnsPoint = g.game_mode === 'hardcore' ? r.id === winnerId : r.correct;
+          return updatePlayer(r.id, { correct: r.correct, score: r.score + (earnsPoint ? 1 : 0) });
+        }),
       );
       await refreshPlayers();
     } finally {
@@ -451,11 +488,13 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
         }
         const rosterFresh = freshRosterRound.current === roundKey;
 
-        // First-answer race: once ANY player answers, cut remaining time to the
-        // grace window for everyone else. CAS on the deadline + a per-deadline
-        // guard ensure this fires once per round only.
+        // First-answer race (LEGACY think/classic only): once ANY player answers,
+        // cut remaining time to the grace window for everyone else. regular and
+        // hardcore keep the full fixed timer — no shrink. CAS on the deadline +
+        // a per-deadline guard ensure this fires once per round only.
         if (
           inAnswerablePhase &&
+          shrinksOnFirstAnswer(g.game_mode) &&
           rosterFresh &&
           g.phase_deadline &&
           shrunkDeadline.current !== g.phase_deadline &&
@@ -581,9 +620,18 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
       const g = gameRef.current;
       const self = meRef.current;
       if (!g || !self || g.phase !== 'question') return;
-      if (self.mc_index !== null && self.mc_index !== undefined) return;
 
-      await updatePlayer(self.id, { mc_index: index });
+      const alreadyPicked = self.mc_index !== null && self.mc_index !== undefined;
+      // Regular ("every answer counts") lets you change your pick until the timer
+      // ends. Hardcore (and legacy modes) lock on the first tap.
+      if (alreadyPicked && g.game_mode !== 'regular') return;
+
+      const patch: Partial<Player> = { mc_index: index };
+      // Stamp answered_at on the FIRST pick only, using the synced server clock.
+      if (!alreadyPicked) {
+        patch.answered_at = new Date(serverNow()).toISOString();
+      }
+      await updatePlayer(self.id, patch);
       await refreshPlayers();
     },
     [refreshPlayers],
@@ -606,6 +654,10 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
       if (!self || !g || g.phase !== 'answering' || self.done) return;
       const patch: Partial<Player> = { done: true };
       if (text !== undefined) patch.transcript = text;
+      // Stamp answered_at on the single commit (if not already set), synced clock.
+      if (!self.answered_at) {
+        patch.answered_at = new Date(serverNow()).toISOString();
+      }
       await updatePlayer(self.id, patch);
       await refreshPlayers();
     },

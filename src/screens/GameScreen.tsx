@@ -35,10 +35,10 @@ import { useMeshWebRTC } from '@/hooks/useMeshWebRTC';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { playSound } from '@/lib/sounds';
 import { SoundToggle } from '@/components/SoundToggle';
+import { MicToggle } from '@/components/MicToggle';
 import { JoinScreen } from '@/components/JoinScreen';
 import { Lobby } from '@/components/Lobby';
-import { CameraGrid } from '@/components/CameraGrid';
-import { CameraPanel } from '@/components/CameraPanel';
+import { CameraStage } from '@/components/CameraStage';
 import { QuestionPanel } from '@/components/QuestionPanel';
 import { WinnerScreen } from '@/components/WinnerScreen';
 import type { RootStackParamList } from '@/navigation/types';
@@ -83,6 +83,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
   const [typedMode, setTypedMode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pttHeld, setPttHeld] = useState(false);
+  const [micMuted, setMicMuted] = useState(false);
   const [rematchLoading, setRematchLoading] = useState(false);
 
   const lastTranscriptWrite = useRef(0);
@@ -215,12 +216,14 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
   }, [me?.id, startCamera]);
 
   // Voice answering uses Apple Speech — keep WebRTC mic off during that phase to avoid iOS audio fights.
+  // A manual mute (MicToggle) always wins so the player can silence their mic at any time.
   const micPolicy = useCallback(() => {
     if (!game) return false;
+    if (micMuted) return false;
     if (game.mc_mode) return true;
     if (game.phase === 'answering') return false;
     return pttHeld;
-  }, [game, pttHeld]);
+  }, [game, pttHeld, micMuted]);
 
   useEffect(() => {
     setMicEnabled(micPolicy());
@@ -338,12 +341,6 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
   const showWinner = game.phase === 'ended' || game.status === 'ended';
 
-  // WhatsApp-style: opponents fill the screen; my own feed is a small PiP.
-  const others = players.filter((p) => p.id !== me.id);
-  const showSelfPip = others.length > 0;
-  const gridPlayers = showSelfPip ? others : players;
-  const selfAnswering = game.phase === 'answering' && !me.done;
-
   const sharedPanelProps = {
     game,
     question: currentQuestion,
@@ -366,49 +363,34 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
   return (
     <View style={styles.root}>
-      {/* Full-screen opponent video(s) — the WhatsApp-style group-call backdrop
-          that the quiz floats over. */}
+      {/* Full-screen camera backdrop. Tap any feed to cycle layouts (CameraStage). */}
       <View style={styles.cameraLayer}>
-        <CameraGrid
-          players={gridPlayers}
+        <CameraStage
+          players={players}
+          me={me}
           localStream={localStream}
           remoteStreams={remoteStreams}
-          myId={me.id}
           camerasEnabled={camerasEnabled}
           showResult={game.phase === 'result'}
           phase={game.phase}
           mcMode={game.mc_mode}
-          fill
-          t={t}
           localMedia={{
             micLive: micPolicy(),
             cameraBlocked: camerasEnabled && Boolean(cameraError),
             micBlocked: Boolean(cameraError),
           }}
+          t={t}
         />
       </View>
 
-      {showSelfPip ? (
-        <View style={styles.selfPip}>
-          <CameraPanel
-            player={me}
-            stream={localStream}
-            showVideo={camerasEnabled}
-            showResult={game.phase === 'result'}
-            micLive={micPolicy()}
-            cameraBlocked={camerasEnabled && Boolean(cameraError)}
-            micBlocked={Boolean(cameraError)}
-            isAnswering={selfAnswering}
-            mutedToPeers={selfAnswering && !game.mc_mode}
-            answeringLabel={t('playerAnswering')}
-            mutedLabel={t('answeringMutedShort')}
-            fill
-          />
-        </View>
-      ) : null}
-
-      <View style={styles.soundTogglePlaying}>
-        <SoundToggle />
+      <View style={styles.micTogglePlaying}>
+        <MicToggle
+          muted={micMuted}
+          onToggle={() => {
+            playSound('click');
+            setMicMuted((v) => !v);
+          }}
+        />
       </View>
 
       {/* Top overlay: round + question + timer floating near the top. */}
@@ -450,28 +432,13 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   // In-game: sit just below the (taller) self-camera PiP at the top-right.
-  soundTogglePlaying: {
+  micTogglePlaying: {
     position: 'absolute',
     top: 166,
     right: 14,
     zIndex: 20,
   },
   cameraLayer: { ...StyleSheet.absoluteFillObject },
-  selfPip: {
-    position: 'absolute',
-    right: 10,
-    top: 8,
-    width: 116,
-    height: 150,
-    borderRadius: 12,
-    overflow: 'hidden',
-    zIndex: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 5,
-  },
   // Top overlay lives in the column to the LEFT of the self-camera PiP, so the
   // question can use most of the width while the bigger PiP sits top-right.
   overlayTop: {

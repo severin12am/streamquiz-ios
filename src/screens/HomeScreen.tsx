@@ -5,7 +5,7 @@
  * Join: parse UUID from pasted link → navigate Game asHost:false.
  */
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, Pressable } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { generateQuestions } from '@/api/client';
 import { parseGameIdFromLink } from '@/api/client';
@@ -13,6 +13,7 @@ import { isConfigured } from '@/lib/config';
 import { getSupabase } from '@/lib/supabase';
 import { addQuestionsToHistory, getPreviousQuestions } from '@/lib/question-history';
 import { useLocale } from '@/context/LocaleProvider';
+import { useEntitlements } from '@/context/EntitlementsProvider';
 import { BrandLogo } from '@/components/BrandLogo';
 import { CreateGame } from '@/components/CreateGame';
 import { HomeDotTexture } from '@/components/HomeDotTexture';
@@ -22,12 +23,14 @@ import { LanguagePicker } from '@/components/LanguagePicker';
 import { SoundToggle } from '@/components/SoundToggle';
 import { playSound } from '@/lib/sounds';
 import type { RootStackParamList } from '@/navigation/types';
+import type { GameMode } from '@/lib/types';
 import { colors } from '@/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
 export function HomeScreen({ navigation }: Props) {
   const { t, locale, setLocale } = useLocale();
+  const { allowance, refresh, noteCreated } = useEntitlements();
   const [joinInput, setJoinInput] = useState('');
 
   if (!isConfigured()) {
@@ -43,9 +46,19 @@ export function HomeScreen({ navigation }: Props) {
     difficulty: 'easy' | 'medium' | 'hard';
     num_questions: number;
     mc_mode: boolean;
-    game_mode: 'think' | 'classic';
+    game_mode: GameMode;
     cameras_enabled: boolean;
   }) => {
+    // Joining is always free; creating is gated. Check before spending any AI
+    // tokens or inserting a row.
+    const current = await refresh();
+    if (!current.allowed) {
+      navigation.navigate('Paywall', {
+        reason: current.tier === 'free' ? 'trial' : 'monthly',
+      });
+      return;
+    }
+
     try {
       const previous = await getPreviousQuestions(params.topic);
       const questions = await generateQuestions({
@@ -76,11 +89,20 @@ export function HomeScreen({ navigation }: Props) {
         .single();
 
       if (error) throw error;
+      await noteCreated();
       navigation.navigate('Game', { gameId: data.id, asHost: true });
     } catch (e) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed to create game');
     }
   };
+
+  const quotaLabel = (() => {
+    if (!allowance) return null;
+    if (allowance.tier === 'unlimited' || allowance.remaining === Infinity) return null;
+    const suffix =
+      allowance.tier === 'limited' ? t('paywallMonthlyLeft') : t('paywallFreeLeft');
+    return `${allowance.remaining} ${suffix}`;
+  })();
 
   const handleJoin = () => {
     const id = parseGameIdFromLink(joinInput);
@@ -104,6 +126,13 @@ export function HomeScreen({ navigation }: Props) {
 
       <BrandLogo />
       <Text style={styles.steps}>{t('homeSteps')}</Text>
+
+      {quotaLabel ? (
+        <Pressable style={styles.quotaPill} onPress={() => navigation.navigate('Paywall')}>
+          <Text style={styles.quotaText}>{quotaLabel}</Text>
+          <Text style={styles.quotaLink}>{t('seePlans')}</Text>
+        </Pressable>
+      ) : null}
 
       <CreateGame onCreate={handleCreate} t={t} />
 
@@ -159,6 +188,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  quotaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quotaText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  quotaLink: { color: colors.accent, fontSize: 13, fontWeight: '700' },
   joinTitle: { color: colors.text, fontSize: 17, fontWeight: '600' },
   input: {
     backgroundColor: colors.bgElevated,

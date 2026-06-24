@@ -75,5 +75,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+    // RevenueCat public iOS SDK key (safe to ship in the client bundle).
+    // When unset, in-app purchases degrade gracefully and only the free trial applies.
+    revenueCatIosKey: process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY,
   },
 });

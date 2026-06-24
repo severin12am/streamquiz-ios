@@ -14,6 +14,13 @@ const en = {
   multipleChoice: 'Multiple choice',
   voiceAnswers: 'Voice / text answers',
   gameMode: 'Game mode',
+  everyAnswerMode: 'Every answer counts',
+  everyAnswerModeDesc:
+    'Answer right away and change your pick until the timer ends — everyone who answers correctly scores.',
+  firstCorrectMode: 'Only first answer counts',
+  firstCorrectModeDesc:
+    'Your answer locks the instant you submit. Only the first correct answer scores.',
+  answerChangeable: 'You can still change',
   firstAnswerMode: 'First answer',
   firstAnswerModeDesc:
     'Answer the moment the question appears — the first answer leaves everyone else just 4 seconds.',
@@ -102,6 +109,32 @@ const en = {
   adjust: 'Adjust',
   hideAdjust: 'Hide settings',
   settings: 'Settings',
+  paywallTitle: 'Unlock quiz creation',
+  paywallSubtitle:
+    'Joining quizzes is always free. Choose a plan to keep creating your own.',
+  paywallFreeLeft: 'free quizzes left',
+  paywallTrialEnded: "You've used all your free quizzes",
+  paywallMonthlyLeft: 'left this month',
+  paywallMonthlyReached: "You've created all 30 quizzes this month",
+  planLimited: '30 games / month',
+  planUnlimited: 'Unlimited games',
+  planLimitedDesc: 'Create up to 30 quizzes every month.',
+  planUnlimitedDesc: 'Create as many quizzes as you want.',
+  billingMonthly: 'Monthly',
+  billingAnnual: 'Annual',
+  billingAnnualSave: 'Save 20%',
+  perMonth: '/mo',
+  perYear: '/yr',
+  subscribe: 'Subscribe',
+  currentPlan: 'Your current plan',
+  restorePurchases: 'Restore purchases',
+  paywallTerms:
+    'Subscriptions renew automatically until cancelled in your Apple ID settings.',
+  billingUnavailable: 'In-app purchases are not available on this build yet.',
+  purchaseSuccess: 'You\u2019re all set — enjoy creating quizzes!',
+  restoreSuccess: 'Purchases restored.',
+  restoreNone: 'No previous purchases found.',
+  seePlans: 'See plans',
 } as const;
 
 const ru: typeof en = {
@@ -121,6 +154,13 @@ const ru: typeof en = {
   multipleChoice: 'Варианты ответа',
   voiceAnswers: 'Голос / текст',
   gameMode: 'Режим игры',
+  everyAnswerMode: 'Каждый ответ важен',
+  everyAnswerModeDesc:
+    'Отвечайте сразу и меняйте выбор до конца таймера — очко получает каждый, кто ответил верно.',
+  firstCorrectMode: 'Только первый ответ',
+  firstCorrectModeDesc:
+    'Ответ фиксируется сразу после отправки. Очко получает только первый правильный ответ.',
+  answerChangeable: 'Можно изменить',
   firstAnswerMode: 'Первый ответ',
   firstAnswerModeDesc:
     'Отвечайте сразу, как появится вопрос — первый ответ оставляет остальным только 4 секунды.',
@@ -225,6 +265,13 @@ const es: typeof en = {
   multipleChoice: 'Opción múltiple',
   voiceAnswers: 'Voz / texto',
   gameMode: 'Modo de juego',
+  everyAnswerMode: 'Cuenta cada respuesta',
+  everyAnswerModeDesc:
+    'Responde enseguida y cambia tu elección hasta que acabe el tiempo: todos los que aciertan puntúan.',
+  firstCorrectMode: 'Solo la primera respuesta',
+  firstCorrectModeDesc:
+    'Tu respuesta se bloquea al enviarla. Solo puntúa la primera respuesta correcta.',
+  answerChangeable: 'Aún puedes cambiar',
   firstAnswerMode: 'Primera respuesta',
   firstAnswerModeDesc:
     'Responde en cuanto aparezca la pregunta — la primera respuesta deja solo 4 segundos al resto.',
@@ -317,6 +364,13 @@ const fr: typeof en = {
   multipleChoice: 'Choix multiple',
   voiceAnswers: 'Voix / texte',
   gameMode: 'Mode de jeu',
+  everyAnswerMode: 'Chaque réponse compte',
+  everyAnswerModeDesc:
+    'Répondez tout de suite et changez votre choix jusqu’à la fin du temps : tous ceux qui ont juste marquent.',
+  firstCorrectMode: 'Seule la première compte',
+  firstCorrectModeDesc:
+    'Votre réponse se verrouille dès l’envoi. Seule la première bonne réponse marque.',
+  answerChangeable: 'Modifiable encore',
   firstAnswerMode: 'Première réponse',
   firstAnswerModeDesc:
     'Répondez dès que la question apparaît — la première réponse ne laisse que 4 secondes aux autres.',
@@ -409,6 +463,13 @@ const de: typeof en = {
   multipleChoice: 'Multiple Choice',
   voiceAnswers: 'Sprache / Text',
   gameMode: 'Spielmodus',
+  everyAnswerMode: 'Jede Antwort zählt',
+  everyAnswerModeDesc:
+    'Antworte sofort und ändere deine Wahl bis zum Ablauf der Zeit — alle Richtigen punkten.',
+  firstCorrectMode: 'Nur die erste Antwort',
+  firstCorrectModeDesc:
+    'Deine Antwort wird beim Absenden sofort fixiert. Nur die erste richtige Antwort punktet.',
+  answerChangeable: 'Noch änderbar',
   firstAnswerMode: 'Erste Antwort',
   firstAnswerModeDesc:
     'Antworte sobald die Frage erscheint — die erste Antwort lässt allen anderen nur 4 Sekunden.',
@@ -501,6 +562,13 @@ const ja: typeof en = {
   multipleChoice: '選択式',
   voiceAnswers: '音声 / テキスト',
   gameMode: 'ゲームモード',
+  everyAnswerMode: '全員の正解が得点',
+  everyAnswerModeDesc:
+    'すぐに回答でき、時間内なら選び直せます。正解した全員が得点します。',
+  firstCorrectMode: '最初の正解のみ',
+  firstCorrectModeDesc:
+    '送信した瞬間に回答が確定します。最初の正解だけが得点します。',
+  answerChangeable: 'まだ変更できます',
   firstAnswerMode: 'ファーストアンサー',
   firstAnswerModeDesc:
     '問題が表示されたらすぐに回答 — 最初の回答者以外は残り4秒だけ。',
@@ -593,6 +661,13 @@ const ar: typeof en = {
   multipleChoice: 'اختيار من متعدد',
   voiceAnswers: 'صوت / نص',
   gameMode: 'وضع اللعب',
+  everyAnswerMode: 'كل إجابة تُحتسب',
+  everyAnswerModeDesc:
+    'أجب فورًا ويمكنك تغيير اختيارك حتى ينتهي الوقت — كل من يجيب بشكل صحيح يسجّل نقطة.',
+  firstCorrectMode: 'الإجابة الأولى فقط',
+  firstCorrectModeDesc:
+    'تُقفل إجابتك لحظة الإرسال. تُحتسب الإجابة الصحيحة الأولى فقط.',
+  answerChangeable: 'يمكنك التغيير',
   firstAnswerMode: 'أول إجابة',
   firstAnswerModeDesc:
     'أجب لحظة ظهور السؤال — أول إجابة تترك للآخرين 4 ثوانٍ فقط.',

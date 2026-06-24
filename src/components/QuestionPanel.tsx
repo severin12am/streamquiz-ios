@@ -97,11 +97,13 @@ export function QuestionPanel({
 }: Props) {
   const idx = game.current_question_index + 1;
   const picksByOption = buildPicksByOption(players, me?.id);
-  const secondsLeft = Math.max(0, Math.ceil(timeLeftMs / 1000));
-  const iHavePicked = !!me && me.mc_index !== null && me.mc_index !== undefined;
-  const someonePicked = players.some((p) => p.mc_index !== null && p.mc_index !== undefined);
+  // Regular ("every answer counts") lets you change your pick until the timer ends.
+  const canChangePick = game.game_mode === 'regular';
   const mcCanSelect =
-    game.phase === 'question' && !!me && me.mc_index === null && !!question?.options;
+    game.phase === 'question' &&
+    !!me &&
+    (canChangePick || me.mc_index === null) &&
+    !!question?.options;
   const showMcGrid =
     !!question?.options &&
     (game.phase === 'question' || (game.phase === 'result' && game.mc_mode));
@@ -114,12 +116,6 @@ export function QuestionPanel({
     <View style={[styles.panel, dark && styles.panelDark]}>
       {showTop ? (
         <>
-          <View style={dark ? styles.roundChip : undefined}>
-            <Text style={[styles.round, dark && styles.textLightMuted]}>
-              {t('round')} {idx} {t('of')} {game.num_questions}
-            </Text>
-          </View>
-
           {game.phase === 'thinking' ? (
             <View style={[styles.center, dark && styles.chip]}>
               <Text style={[styles.thinking, dark && styles.textLight]}>{t('thinking')}</Text>
@@ -139,8 +135,14 @@ export function QuestionPanel({
                 </View>
               ) : null}
               <View style={dark ? styles.chip : undefined}>
-                <Text style={[styles.question, dark && styles.textLight]}>{question.question}</Text>
+                <Text style={[styles.question, dark && styles.textLight]}>
+                  {question.question}{' '}
+                  <Text style={[styles.questionCounter, dark && styles.textLightMuted]}>
+                    {idx}/{game.num_questions}
+                  </Text>
+                </Text>
               </View>
+              <PlayerStatusStrip players={players} mcMode={game.mc_mode} dark={dark} />
             </>
           ) : null}
         </>
@@ -157,24 +159,6 @@ export function QuestionPanel({
 
           {inQuestionFlow ? (
             <>
-              {game.phase === 'question' && game.mc_mode ? (
-                <View style={[styles.mcStatus, dark && styles.chipTight]}>
-                  {iHavePicked ? (
-                    <Text style={[styles.mcStatusLocked, dark && styles.textLightMuted]}>
-                      {t('answerLocked')} · {secondsLeft}
-                      {t('secondsLeftSuffix')}
-                    </Text>
-                  ) : someonePicked ? (
-                    <Text style={styles.mcStatusUrgent}>
-                      {t('someoneAnswered')} · {secondsLeft}
-                      {t('secondsLeftSuffix')}
-                    </Text>
-                  ) : (
-                    <Text style={styles.mcStatusGo}>{t('answerNow')}</Text>
-                  )}
-                </View>
-              ) : null}
-
               {showMcGrid && question.options ? (
                 <MCOptions
                   options={question.options}
@@ -265,6 +249,52 @@ export function QuestionPanel({
   );
 }
 
+function playerAnswered(p: Player, mcMode: boolean): boolean {
+  return mcMode ? p.mc_index !== null && p.mc_index !== undefined : p.done === true;
+}
+
+/**
+ * Per-player status row shown under the question: name (≤10 chars) in the
+ * player's slot colour, a colour circle (outline = not answered, filled = answered),
+ * and the running score. Wraps to multiple lines for >2 players.
+ */
+function PlayerStatusStrip({
+  players,
+  mcMode,
+  dark,
+}: {
+  players: Player[];
+  mcMode: boolean;
+  dark: boolean;
+}) {
+  if (players.length === 0) return null;
+  return (
+    <View style={[styles.statusStrip, dark && styles.chipTight]}>
+      {[...players]
+        .sort((a, b) => a.slot - b.slot)
+        .map((p) => {
+          const colour = playerColor(p.slot);
+          const answered = playerAnswered(p, mcMode);
+          return (
+            <View key={p.id} style={styles.statusCell}>
+              <View
+                style={[
+                  styles.statusCircle,
+                  { borderColor: colour },
+                  answered ? { backgroundColor: colour } : null,
+                ]}
+              />
+              <Text style={[styles.statusName, { color: colour }]} numberOfLines={1}>
+                {p.name.slice(0, 10)}
+              </Text>
+              <Text style={[styles.statusScore, dark && styles.textLight]}>{p.score}</Text>
+            </View>
+          );
+        })}
+    </View>
+  );
+}
+
 function VoiceResultRow({
   name,
   isMe,
@@ -350,13 +380,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
-  roundChip: { alignSelf: 'center' },
   timerLine: { marginBottom: 8, paddingHorizontal: 4 },
-  round: { color: colors.textMuted, fontSize: 13, textAlign: 'center' },
   center: { alignItems: 'center', gap: 12, paddingVertical: 24 },
   thinking: { color: colors.text, fontSize: 20, fontWeight: '600' },
   checking: { color: colors.textMuted, marginTop: 8 },
   question: { color: colors.text, fontSize: 18, fontWeight: '600', textAlign: 'center' },
+  questionCounter: { color: colors.textMuted, fontSize: 15, fontWeight: '700' },
   voiceBox: { gap: 10 },
   speechHint: { color: colors.wrong, fontSize: 13, textAlign: 'center' },
   answeringStatusMuted: {
@@ -388,10 +417,37 @@ const styles = StyleSheet.create({
   },
   voiceActions: { gap: 8 },
   disabled: { opacity: 0.5 },
-  mcStatus: { minHeight: 24, alignItems: 'center', justifyContent: 'center' },
-  mcStatusGo: { color: colors.correct, fontSize: 15, fontWeight: '700' },
-  mcStatusUrgent: { color: colors.wrong, fontSize: 15, fontWeight: '700' },
-  mcStatusLocked: { color: colors.textSecondary, fontSize: 13 },
+  statusStrip: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    rowGap: 6,
+  },
+  statusCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  statusCircle: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    backgroundColor: 'transparent',
+  },
+  statusName: {
+    fontSize: 12,
+    fontWeight: '700',
+    maxWidth: 90,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  statusScore: { color: '#fff', fontSize: 12, fontWeight: '800' },
   resultBox: { gap: 8, paddingVertical: 12, width: '100%' },
   resultTitle: { color: colors.textMuted, fontSize: 14, textAlign: 'center', marginBottom: 4 },
   voiceResultRow: {

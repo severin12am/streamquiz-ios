@@ -1,6 +1,6 @@
 /**
  * Host create form — simplified home: topic + Create, then Adjust for settings.
- * Defaults: medium, MC on, cameras on, first-answer mode (`classic` in DB).
+ * Defaults: medium, MC on, cameras on, "every answer counts" (`regular` in DB).
  * Colors: theme.ts (matches web globals.css lagoon palette).
  */
 import React, { useState } from 'react';
@@ -31,7 +31,7 @@ export function CreateGame({ onCreate, t }: Props) {
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [numQuestions, setNumQuestions] = useState(5);
   const [mcMode, setMcMode] = useState(true);
-  const [gameMode, setGameMode] = useState<GameMode>('classic');
+  const [gameMode, setGameMode] = useState<GameMode>('regular');
   const [camerasEnabled, setCamerasEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -83,13 +83,19 @@ export function CreateGame({ onCreate, t }: Props) {
           <Text style={styles.label}>{t('difficulty')}</Text>
           <View style={styles.row}>
             {difficulties.map((d) => (
-              <Pressable
+              <KeycapButton
                 key={d}
-                style={[styles.chip, difficulty === d && styles.chipActive]}
-                onPress={() => setDifficulty(d)}
+                variant={difficulty === d ? 'primary' : 'secondary'}
+                onPress={() => {
+                  playSound('click');
+                  setDifficulty(d);
+                }}
+                style={styles.diffBtn}
+                contentStyle={styles.diffFace}
+                textStyle={styles.diffText}
               >
-                <Text style={styles.chipText}>{t(d)}</Text>
-              </Pressable>
+                {t(d)}
+              </KeycapButton>
             ))}
           </View>
 
@@ -104,18 +110,18 @@ export function CreateGame({ onCreate, t }: Props) {
 
           <Text style={styles.label}>{t('gameMode')}</Text>
           <Pressable
-            style={[styles.modeCard, gameMode === 'classic' && styles.modeCardActive]}
-            onPress={() => setGameMode('classic')}
+            style={[styles.modeCard, gameMode === 'regular' && styles.modeCardActive]}
+            onPress={() => setGameMode('regular')}
           >
-            <Text style={styles.modeTitle}>{t('firstAnswerMode')}</Text>
-            <Text style={styles.modeDesc}>{t('firstAnswerModeDesc')}</Text>
+            <Text style={styles.modeTitle}>{t('everyAnswerMode')}</Text>
+            <Text style={styles.modeDesc}>{t('everyAnswerModeDesc')}</Text>
           </Pressable>
           <Pressable
-            style={[styles.modeCard, gameMode === 'think' && styles.modeCardActive]}
-            onPress={() => setGameMode('think')}
+            style={[styles.modeCard, gameMode === 'hardcore' && styles.modeCardActive]}
+            onPress={() => setGameMode('hardcore')}
           >
-            <Text style={styles.modeTitle}>{t('thinkRaceMode')}</Text>
-            <Text style={styles.modeDesc}>{t('thinkRaceModeDesc')}</Text>
+            <Text style={styles.modeTitle}>{t('firstCorrectMode')}</Text>
+            <Text style={styles.modeDesc}>{t('firstCorrectModeDesc')}</Text>
           </Pressable>
 
           <View style={styles.switchRow}>
@@ -143,7 +149,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  label: { color: colors.textMuted, fontSize: 14 },
+  label: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
   input: {
     backgroundColor: colors.bgElevated,
     borderRadius: 12,
@@ -153,17 +165,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     fontSize: 16,
   },
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: colors.bgElevated,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  chipActive: { borderColor: colors.accent, backgroundColor: '#d8ebe8' },
-  chipText: { color: colors.text, fontSize: 13 },
+  row: { flexDirection: 'row', gap: 8 },
+  diffBtn: { flex: 1 },
+  diffFace: { paddingVertical: 11, paddingHorizontal: 8 },
+  diffText: { fontSize: 15 },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   hint: { color: colors.textMuted, fontSize: 12 },
   adjustPanel: {

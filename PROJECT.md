@@ -182,23 +182,36 @@ Every participant runs the **same** `GameScreen` component. Host-only actions ar
 
 ### Game mode (`game_mode`)
 
-UI labels and DB values (do not rename the DB values — clients rely on `think` / `classic`):
+UI labels and DB values:
 
 | UI label | DB value | Behavior |
 |----------|----------|----------|
-| **First answer** (default) | `classic` | Answer the moment the question appears. Round opens immediately to `question` (MC) or `answering` (voice) — no `thinking` phase. |
-| **Think race** | `think` | A few locked seconds to think, then everyone unlocks together. Each round starts with a **locked** `thinking` phase (5 seconds); nobody can answer until it ends. |
+| **Every answer counts** (default) | `regular` | Cooperative. Answer immediately; **everyone who answers correctly scores +1**. MC picks can be changed until the timer ends; voice answers can be edited until Done. No thinking phase, no timer shrink. |
+| **Only first answer counts** | `hardcore` | Competitive. Answer immediately, but the answer **locks the instant you submit** (one-shot voice; first-tap MC). **Only the single earliest correct answer scores +1** (ranked by `answered_at` on the synced server clock). No thinking phase, no timer shrink. |
 
 **Copy shown in create UI:**
 
-- **First answer:** “Answer the moment the question appears — the first answer leaves everyone else just 4 seconds.”
-- **Think race:** “A few locked seconds to think, then everyone unlocks together — the first answer starts a 4-second countdown for the rest.”
+- **Every answer counts:** “Answer right away and change your pick until the timer ends — everyone who answers correctly scores.”
+- **Only first answer counts:** “Your answer locks the instant you submit. Only the first correct answer scores.”
 
 Set at game creation in `CreateGame.tsx` (web) or under **Adjust** on the iOS home screen. Stored in `games.game_mode`.
 
-### First-answer grace (both modes)
+Both modes use a **fixed 20s** answer timer that never shrinks, and end early only when **every** player has answered.
 
-When **any** player submits an answer during `question` or `answering`, `maybeShrinkDeadline()` in `useGameState.ts` shortens `phase_deadline` so at most **4 seconds** remain for everyone else (`FIRST_ANSWER_GRACE_SECONDS`). This is the “4-second countdown” described in the UI — it is **not** a separate game mode.
+### `answered_at` (winner selection)
+
+Each player row carries `answered_at` — an ISO timestamp stamped from the synced server clock (`serverNow()`) at the moment the player **first** commits (first MC pick, or voice Done). Reset to `null` each round. Used to pick the single winner in `hardcore`. In `regular` it is stored but not used for scoring.
+
+### Legacy modes (read-only compatibility)
+
+Old DB rows may still carry `think` / `classic`. The client keeps handling them:
+
+| DB value | Behavior |
+|----------|----------|
+| `classic` | Immediate answer; first-answer timer shrink to 4s. |
+| `think` | 5s locked `thinking` phase, then answer; first-answer timer shrink to 4s. |
+
+`shrinksOnFirstAnswer(mode)` returns `true` only for `think` / `classic`. When **any** player answers in those modes, `useGameState.ts` shrinks `phase_deadline` so at most **4 seconds** remain (`FIRST_ANSWER_GRACE_SECONDS`). `regular` / `hardcore` never shrink.
 
 ### Answer type (`mc_mode`)
 
@@ -221,7 +234,7 @@ When **any** player submits an answer during `question` or `answering`, `maybeSh
 | `difficulty` | `medium` |
 | `num_questions` | `5` |
 | `mc_mode` | `true` (multiple choice) |
-| `game_mode` | `classic` (**First answer**) |
+| `game_mode` | `regular` (**Every answer counts**) |
 | `cameras_enabled` | `true` |
 | `locale` | `en` (or device/browser language) |
 
@@ -243,9 +256,9 @@ When **any** player submits an answer during `question` or `answering`, `maybeSh
 | Phase | Active when | Duration |
 |-------|-------------|----------|
 | `waiting` | Lobby | Until host starts |
-| `thinking` | Think mode only | 5s (`THINK_TIME_SECONDS`) |
-| `question` | MC mode — picking answers | 15s (`QUESTION_TIME_SECONDS`) |
-| `answering` | Voice mode — speaking | 12s (`VOICE_ANSWER_SECONDS`) |
+| `thinking` | Legacy `think` mode only | 5s (`THINK_TIME_SECONDS`) |
+| `question` | MC mode — picking answers | 20s (`QUESTION_TIME_SECONDS`) |
+| `answering` | Voice mode — speaking | 20s (`VOICE_ANSWER_SECONDS`) |
 | `checking` | AI judging voice answers | Up to 15s safety timeout |
 | `result` | Show outcomes | 5s (`RESULT_TIME_SECONDS`) |
 | `ended` | Game over | — |
@@ -254,19 +267,19 @@ Legacy phases `buzzing` and `judging` exist in the DB schema but are **unused** 
 
 ### Round flow diagrams
 
-**Think mode + Multiple choice:**
+**Multiple choice (`regular` / `hardcore`):**
 
 ```
-thinking (5s) → question (15s or early if all picked) → result (5s) → next question
+question (20s or early if all picked) → result (5s) → next question
 ```
 
-**Think mode + Voice:**
+**Voice (`regular` / `hardcore`):**
 
 ```
-thinking (5s) → answering (12s or early if all Done) → checking → result (5s) → next question
+answering (20s or early if all Done) → checking → result (5s) → next question
 ```
 
-**First answer mode** (`classic`) skips `thinking` and jumps straight to `question` or `answering`.
+`regular` and `hardcore` go straight to `question` / `answering` (no `thinking`). Legacy `think` prepends a 5s locked `thinking` phase.
 
 ### Phase advancement (deadline-driven)
 
@@ -285,13 +298,13 @@ This design means the game continues even if the **host disconnects** — any pa
 | `question` | Every player has `mc_index !== null` | `resolveMcRound()` |
 | `answering` | Every player has `done === true` | Transition to `checking`, run `runVoiceCheck()` |
 
-### First-answer grace (deadline shrink)
+### First-answer grace (deadline shrink — LEGACY only)
 
 | Trigger | Condition | Action |
 |---------|-----------|--------|
-| Any player answers | `phase` is `question` or `answering`, and `hasAnswered(player)` becomes true for someone | If more than 4s remain on `phase_deadline`, shrink to **4s from now** via `updateGameIfDeadline()` |
+| Any player answers | `game_mode` is `think`/`classic`, `phase` is `question`/`answering`, and `hasAnswered(player)` becomes true for someone | If more than 4s remain on `phase_deadline`, shrink to **4s from now** via `updateGameIfDeadline()` |
 
-Constants: `FIRST_ANSWER_GRACE_SECONDS = 4`. Applies in **both** First answer and Think race modes.
+Constants: `FIRST_ANSWER_GRACE_SECONDS = 4`. Gated by `shrinksOnFirstAnswer(mode)` — applies **only** to legacy `think` / `classic`. `regular` and `hardcore` never shrink the timer.
 
 ### Guarded updates
 
@@ -345,7 +358,7 @@ Defined in `lib/supabase.ts`. This prevents double-scoring and duplicate transit
 | `num_questions` | INT | 3–10 |
 | `mc_mode` | BOOLEAN | MC vs voice |
 | `cameras_enabled` | BOOLEAN | Request video streams |
-| `game_mode` | TEXT | `think` (Think race) or `classic` (First answer) |
+| `game_mode` | TEXT | `regular` (Every answer counts) or `hardcore` (Only first answer counts); legacy `think` / `classic` still accepted |
 | `questions` | JSONB | Array of `Question` objects |
 
 **Live fields** (updated during play):
@@ -381,6 +394,7 @@ One row per participant. Unique constraints: `(game_id, slot)` and `(game_id, cl
 | `correct` | BOOLEAN | Judged outcome this round |
 | `done` | BOOLEAN | Voice lock-in this round |
 | `rematch` | BOOLEAN | Rematch vote |
+| `answered_at` | TIMESTAMPTZ | Server-clock time of first commit this round (winner selection in `hardcore`); reset each round |
 
 ### Row Level Security
 
@@ -652,20 +666,21 @@ supabase/
 |--------|-----|--------|
 | `join(name, asHost)` | Anyone | Claim or re-attach seat |
 | `startGame()` | Host only | Reset scores, begin round 1 |
-| `submitMCAnswer(i)` | Anyone in MC phase | Lock pick |
-| `updateTranscript(text)` | Voice phase | Live transcript sync |
-| `finishAnswer(text?)` | Voice phase | Mark `done` |
+| `submitMCAnswer(i)` | Anyone in MC phase | Set pick (changeable in `regular`, locked on first tap in `hardcore`); stamps `answered_at` on first pick |
+| `updateTranscript(text)` | Voice phase | Live transcript sync (until `done`) |
+| `finishAnswer(text?)` | Voice phase | Mark `done`; stamps `answered_at` |
 | `voteRematch()` | Anyone | Set `rematch: true` |
 | `rematch(questions?)` | Host (triggered by votes) | Reset to lobby |
 
 **Timing constants** (exported for UI):
 
 ```typescript
-THINK_TIME_SECONDS    = 5
-QUESTION_TIME_SECONDS = 15
-VOICE_ANSWER_SECONDS  = 12
+QUESTION_TIME_SECONDS = 20
+VOICE_ANSWER_SECONDS  = 20
 RESULT_TIME_SECONDS   = 5
 CHECK_TIMEOUT_SECONDS = 15
+// Legacy only (think/classic):
+THINK_TIME_SECONDS    = 5
 FIRST_ANSWER_GRACE_SECONDS = 4
 ```
 
@@ -770,6 +785,7 @@ Run migrations in order if your DB predates certain features:
 |------|---------|
 | `migration-v2-steal-streaks.sql` | Steal mechanic, streaks (legacy) |
 | `migration-v3-game-mode.sql` | `game_mode` column |
+| `migration-v4-modes.sql` | `players.answered_at`; expands `game_mode` check to `regular`/`hardcore` (default `regular`) |
 | `migration-v4-simul-answers.sql` | Simultaneous answers |
 | `migration-v5-rematch-votes.sql` | Rematch voting columns |
 | `migration-v6-voice-simul.sql` | Per-player voice columns |
@@ -914,4 +930,4 @@ interface Game {
 
 ---
 
-*Last updated: 6-player multiplayer, First answer (`classic`) + Think race (`think`) modes, 4s first-answer grace, 7 locales, cameras on by default, AI judging via OpenRouter. Native iOS client: see `ios_implementation_help.md`.*
+*Last updated: 6-player multiplayer, Every answer counts (`regular`) + Only first answer counts (`hardcore`) modes (legacy `think`/`classic` read-only), fixed 20s timers, `answered_at` winner selection, 7 locales, cameras on by default, AI judging via OpenRouter. Native iOS client: see `ios_implementation_help.md`.*

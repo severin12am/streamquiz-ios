@@ -3,19 +3,24 @@ import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LocaleProvider } from '@/context/LocaleProvider';
+import { EntitlementsProvider } from '@/context/EntitlementsProvider';
 import { RootNavigator } from '@/navigation/RootNavigator';
 import { initSounds } from '@/lib/sounds';
+import { initPurchases } from '@/lib/purchases';
 
 export default function App() {
   useEffect(() => {
     void initSounds();
+    void initPurchases();
   }, []);
 
   return (
     <SafeAreaProvider>
       <LocaleProvider>
-        <StatusBar style="dark" />
-        <RootNavigator />
+        <EntitlementsProvider>
+          <StatusBar style="dark" />
+          <RootNavigator />
+        </EntitlementsProvider>
       </LocaleProvider>
     </SafeAreaProvider>
   );

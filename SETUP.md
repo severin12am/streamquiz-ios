@@ -26,8 +26,9 @@ cp .env.example .env
 | `EXPO_PUBLIC_SUPABASE_URL` | Same Supabase project as web |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 | `EXPO_PUBLIC_API_BASE_URL` | Deployed web host, **no trailing slash** (e.g. `https://streamquiz.netlify.app`) |
+| `EXPO_PUBLIC_REVENUECAT_IOS_KEY` | RevenueCat **public** iOS SDK key (`appl_…`). Optional — when unset, the creator paywall shows but purchases are disabled and only the free trial applies. See §12. |
 
-Never put `OPENAI_API_KEY` in the app — AI runs on the Next.js server.
+Never put `OPENAI_API_KEY` in the app — AI runs on the Next.js server. The RevenueCat *public* key is client-safe (it is not the secret API key).
 
 ## 3. Development build (required for WebRTC)
 
@@ -110,6 +111,7 @@ Logs also print to the Metro terminal where you ran `npm start` (useful on Simul
 | API URLs, share links | `src/api/client.ts`, `src/lib/config.ts` |
 | Types / MAX_PLAYERS | `src/lib/types.ts` |
 | Deep links / Universal Links | `src/navigation/RootNavigator.tsx`, `app.config.ts`, `universal-links/` |
+| Creator paywall / subscriptions | `src/lib/purchases.ts`, `src/lib/createQuota.ts`, `src/context/EntitlementsProvider.tsx`, `src/screens/PaywallScreen.tsx` |
 | User-visible strings | `src/lib/i18n/messages.ts` |
 
 Each critical file has a top-of-file comment block. Spec reference: `PROJECT.md`, `ios_implementation_help.md`.
@@ -210,6 +212,56 @@ Scan the Metro QR with the **dev client** (not Expo Go).
 - Screen recording button → Photos
 
 Everything else (lobby, MC, timers, rematch) you can validate with **web + `npm test`** first.
+
+## 12. Monetization (creator paywall)
+
+**Joining a quiz is always free.** Only **creating** a quiz is gated:
+
+| Tier | Allowance |
+|------|-----------|
+| Free trial | **5** quizzes ever, then a hard paywall |
+| `limited` | **30** quizzes per calendar month |
+| `unlimited` | No limit |
+
+Prices (set in App Store Connect, shown localized by StoreKit): **$12.99/mo** for 30 games, **$32.99/mo** for unlimited, each with an **annual plan at 20% off**.
+
+Apple requires In-App Purchase for unlocking app functionality (Stripe is not allowed here), so subscriptions go through **StoreKit via RevenueCat** (`react-native-purchases`). Usage counters live per-install in `AsyncStorage` (`src/lib/createQuota.ts`); the *subscription* itself is owned by StoreKit and is restorable/cross-device.
+
+### Graceful fallback
+
+The app runs fine **without** any billing setup: if `EXPO_PUBLIC_REVENUECAT_IOS_KEY` is unset (or the native module isn't in the build yet), the paywall renders with fallback prices, **Subscribe** is disabled, and users keep the 5-quiz free trial. No crashes.
+
+### One-time setup to enable real purchases
+
+1. **App Store Connect → Subscriptions:** create an auto-renewable subscription group with 4 products:
+
+   | Product (suggested ID) | Price | Maps to |
+   |------------------------|-------|---------|
+   | `ws_limited_monthly` | $12.99 / mo | `limited` |
+   | `ws_limited_annual` | $124.99 / yr (~20% off) | `limited` |
+   | `ws_unlimited_monthly` | $32.99 / mo | `unlimited` |
+   | `ws_unlimited_annual` | $316.99 / yr (~20% off) | `unlimited` |
+
+2. **RevenueCat dashboard** ([app.revenuecat.com](https://app.revenuecat.com)):
+   - Add the iOS app (bundle id `com.severin.whosmarter`) and the App Store Connect shared secret.
+   - Create two **entitlements**: `limited` and `unlimited`.
+   - Attach the limited products to `limited`, the unlimited products to `unlimited`.
+   - Create a **default Offering** whose packages use these **identifiers** (the code maps by them):
+     `LIMITED_MONTHLY`, `LIMITED_ANNUAL`, `UNLIMITED_MONTHLY`, `UNLIMITED_ANNUAL`.
+   - Copy the **public iOS SDK key** (`appl_…`).
+
+3. Set the key in `eas.json` (replace `appl_REPLACE_WITH_REVENUECAT_IOS_KEY`) or your local `.env`.
+
+4. Rebuild the native client (new native module):
+
+```bash
+npx expo prebuild --platform ios --clean
+eas build --profile development --platform ios   # or npx expo run:ios on a Mac
+```
+
+5. Test purchases in TestFlight or with a StoreKit sandbox Apple ID. Identifiers (entitlements, package IDs, fallback prices) can be tweaked in `src/lib/purchases.ts`.
+
+> If you change entitlement names, the `30 games/month` cap value, or the `5` free-trial count, edit the constants at the top of `src/lib/purchases.ts`.
 
 ## Troubleshooting
 

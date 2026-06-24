@@ -9,19 +9,36 @@ import { playerColor } from '@/lib/player-colors';
 import {
   THINK_TIME_SECONDS,
   QUESTION_TIME_SECONDS,
+  VOICE_ANSWER_SECONDS,
+  RESULT_TIME_SECONDS,
   FIRST_ANSWER_GRACE_SECONDS,
   POLL_INTERVAL_MS,
   roundStartPatch,
   afterThinkPatch,
+  shrinksOnFirstAnswer,
 } from '@/hooks/useGameState';
 import type { Game, Player } from '@/lib/types';
 
 describe('timing constants parity', () => {
   it('matches web app values', () => {
-    expect(THINK_TIME_SECONDS).toBe(5);
-    expect(QUESTION_TIME_SECONDS).toBe(15);
-    expect(FIRST_ANSWER_GRACE_SECONDS).toBe(4);
+    expect(QUESTION_TIME_SECONDS).toBe(20);
+    expect(VOICE_ANSWER_SECONDS).toBe(20);
+    expect(RESULT_TIME_SECONDS).toBe(5);
     expect(POLL_INTERVAL_MS).toBe(2500);
+  });
+
+  it('keeps legacy think/classic constants', () => {
+    expect(THINK_TIME_SECONDS).toBe(5);
+    expect(FIRST_ANSWER_GRACE_SECONDS).toBe(4);
+  });
+});
+
+describe('shrinksOnFirstAnswer', () => {
+  it('only legacy modes shrink the timer', () => {
+    expect(shrinksOnFirstAnswer('think')).toBe(true);
+    expect(shrinksOnFirstAnswer('classic')).toBe(true);
+    expect(shrinksOnFirstAnswer('regular')).toBe(false);
+    expect(shrinksOnFirstAnswer('hardcore')).toBe(false);
   });
 });
 
@@ -69,6 +86,7 @@ describe('hasAnswered', () => {
     correct: null,
     done: null,
     rematch: null,
+    answered_at: null,
   };
 
   it('detects MC pick', () => {
@@ -105,25 +123,37 @@ describe('round patches', () => {
     last_points: null,
   };
 
-  it('think mode starts with thinking phase', () => {
-    const patch = roundStartPatch(game);
+  it('regular MC goes straight to question (no thinking)', () => {
+    const patch = roundStartPatch({ ...game, game_mode: 'regular' });
+    expect(patch.phase).toBe('question');
+    expect(patch.phase_deadline).toBeTruthy();
+  });
+
+  it('hardcore MC goes straight to question (no thinking)', () => {
+    const patch = roundStartPatch({ ...game, game_mode: 'hardcore' });
+    expect(patch.phase).toBe('question');
+  });
+
+  it('regular voice goes straight to answering', () => {
+    const voiceGame = { ...game, mc_mode: false };
+    const patch = roundStartPatch({ ...voiceGame, game_mode: 'regular' });
+    expect(patch.phase).toBe('answering');
+  });
+
+  it('hardcore voice goes straight to answering', () => {
+    const voiceGame = { ...game, mc_mode: false };
+    const patch = roundStartPatch({ ...voiceGame, game_mode: 'hardcore' });
+    expect(patch.phase).toBe('answering');
+  });
+
+  it('legacy think mode still starts with thinking phase', () => {
+    const patch = roundStartPatch({ ...game, game_mode: 'think' });
     expect(patch.phase).toBe('thinking');
     expect(patch.phase_deadline).toBeTruthy();
   });
 
-  it('classic MC skips thinking', () => {
-    const patch = roundStartPatch({ ...game, game_mode: 'classic' });
-    expect(patch.phase).toBe('question');
-  });
-
   it('after think goes to question for MC', () => {
-    const patch = afterThinkPatch(game);
+    const patch = afterThinkPatch({ ...game, game_mode: 'think' });
     expect(patch.phase).toBe('question');
-  });
-
-  it('classic voice skips thinking', () => {
-    const voiceGame = { ...game, mc_mode: false };
-    const patch = roundStartPatch({ ...voiceGame, game_mode: 'classic' });
-    expect(patch.phase).toBe('answering');
   });
 });

@@ -22,8 +22,6 @@ interface Props {
   isAnswering?: boolean;
   /** Local voice round — mic off so others cannot hear you while you answer. */
   mutedToPeers?: boolean;
-  /** Has this player answered this round? Shows a small status dot. */
-  answered?: boolean | null;
   answeringLabel?: string;
   mutedLabel?: string;
   /** Fill the parent (background mode) instead of a fixed 4:3 tile. */
@@ -40,7 +38,6 @@ export function CameraPanel({
   micBlocked = false,
   isAnswering = false,
   mutedToPeers = false,
-  answered = null,
   answeringLabel = 'Answering',
   mutedLabel = "Can't hear",
   fill = false,
@@ -101,26 +98,14 @@ export function CameraPanel({
         </View>
       ) : null}
 
-      {/* Bottom bar */}
+      {/* Bottom bar — name only; answered status + score live in the
+          PlayerStatusStrip under the question now. */}
       <View style={styles.footer}>
         <View style={styles.nameWrap}>
           <View style={[styles.nameDot, { backgroundColor: color }]} />
           <Text style={styles.name} numberOfLines={1}>
             {player.name}
           </Text>
-          {answered !== null ? (
-            <View
-              style={[
-                styles.answeredDot,
-                answered
-                  ? { backgroundColor: colors.correct, borderWidth: 0 }
-                  : { backgroundColor: 'transparent', borderColor: 'rgba(255,255,255,0.6)' },
-              ]}
-            />
-          ) : null}
-        </View>
-        <View style={styles.scoreChip}>
-          <Text style={styles.score}>{player.score}</Text>
         </View>
       </View>
     </View>
@@ -200,14 +185,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     flexShrink: 1,
   },
-  answeredDot: { width: 8, height: 8, borderRadius: 4, borderWidth: 1.5 },
-  scoreChip: {
-    backgroundColor: colors.bgCard,
-    borderRadius: 7,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  score: { color: colors.gold, fontWeight: '800', fontSize: 13 },
   badge: {
     position: 'absolute',
     top: 8,

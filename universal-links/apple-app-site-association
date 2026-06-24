@@ -3,8 +3,14 @@
     "apps": [],
     "details": [
       {
-        "appIDs": ["REPLACE_WITH_APPLE_TEAM_ID.com.whosmarter.app"],
-        "paths": ["/game/*"]
+        "appIDs": ["REPLACE_WITH_APPLE_TEAM_ID.com.severin.whosmarter"],
+        "paths": ["/game/*"],
+        "components": [
+          {
+            "/": "/game/*",
+            "comment": "Open shared/QR game links in the WhoSmarter iOS app"
+          }
+        ]
       }
     ]
   }

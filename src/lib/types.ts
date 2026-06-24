@@ -5,7 +5,14 @@
 export const MAX_PLAYERS = 6;
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
-export type GameMode = 'think' | 'classic';
+/**
+ * Game modes:
+ * - 'regular'  → "Every answer counts" (default). Everyone correct scores.
+ * - 'hardcore' → "Only first answer counts". Only the earliest correct answer scores.
+ * Legacy ('think' | 'classic') still appear in old DB rows and are handled for
+ * read-only compatibility (thinking phase + first-answer timer shrink).
+ */
+export type GameMode = 'regular' | 'hardcore' | 'think' | 'classic';
 export type GameStatus = 'waiting' | 'ready' | 'playing' | 'ended';
 export type GamePhase =
   | 'waiting'
@@ -41,6 +48,8 @@ export interface Player {
   correct: boolean | null;
   done: boolean | null;
   rematch: boolean | null;
+  /** ISO timestamp (server clock) of the player's first commit this round; reset each round. */
+  answered_at: string | null;
 }
 
 export interface Game {

@@ -10,7 +10,8 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://moyhwkzeetwkpqmhrcso.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_k2II_OqsMXkSqfuHNzs9Cg_JCsCgyFc",
-        "EXPO_PUBLIC_API_BASE_URL": "https://streamquiz.netlify.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://streamquiz.netlify.app",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_REPLACE_WITH_REVENUECAT_IOS_KEY"
       },
       "ios": {
         "simulator": false
@@ -21,7 +22,8 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://moyhwkzeetwkpqmhrcso.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_k2II_OqsMXkSqfuHNzs9Cg_JCsCgyFc",
-        "EXPO_PUBLIC_API_BASE_URL": "https://streamquiz.netlify.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://streamquiz.netlify.app",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_REPLACE_WITH_REVENUECAT_IOS_KEY"
       }
     },
     "production": {
@@ -30,7 +32,8 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://moyhwkzeetwkpqmhrcso.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_k2II_OqsMXkSqfuHNzs9Cg_JCsCgyFc",
-        "EXPO_PUBLIC_API_BASE_URL": "https://streamquiz.netlify.app"
+        "EXPO_PUBLIC_API_BASE_URL": "https://streamquiz.netlify.app",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "appl_REPLACE_WITH_REVENUECAT_IOS_KEY"
       }
     }
   },

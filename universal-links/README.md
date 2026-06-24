@@ -8,7 +8,9 @@ If the app is **not** installed, the link opens in Safari as usual.
 
 Edit `apple-app-site-association` and replace `REPLACE_WITH_APPLE_TEAM_ID` with your 10-character Team ID from [Apple Developer → Membership](https://developer.apple.com/account).
 
-Example: `AB12CD34EF.com.whosmarter.app`
+The bundle identifier is already set to the app's real id (`com.severin.whosmarter`, see `app.config.ts`). Only the Team ID prefix is missing.
+
+Example final value: `AB12CD34EF.com.severin.whosmarter`
 
 ## 2. Copy to the **web** repo (Next.js on Netlify)
 

@@ -16,6 +16,7 @@ import { API_BASE_URL } from '@/lib/config';
 import { debugLog } from '@/lib/debug-log';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { GameScreen } from '@/screens/GameScreen';
+import { PaywallScreen } from '@/screens/PaywallScreen';
 import { DebugScreen } from '@/screens/DebugScreen';
 import { useLocale } from '@/context/LocaleProvider';
 import { colors } from '@/theme';
@@ -82,6 +83,11 @@ export function RootNavigator() {
                 )
               : undefined,
           })}
+        />
+        <Stack.Screen
+          name="Paywall"
+          component={PaywallScreen}
+          options={{ title: t('paywallTitle'), presentation: 'modal' }}
         />
         <Stack.Screen
           name="Debug"

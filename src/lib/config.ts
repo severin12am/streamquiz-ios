@@ -22,6 +22,18 @@ export const API_BASE_URL = (
   ''
 ).replace(/\/$/, '');
 
+/** RevenueCat public iOS SDK key. Empty → IAP disabled, free trial only. */
+export const REVENUECAT_IOS_KEY = (
+  (extra.revenueCatIosKey as string | undefined) ??
+  process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ??
+  ''
+).trim();
+
+/** True when a usable RevenueCat key is configured (ignores the placeholder). */
+export function isBillingConfigured(): boolean {
+  return Boolean(REVENUECAT_IOS_KEY) && !REVENUECAT_IOS_KEY.includes('REPLACE_WITH');
+}
+
 export function api(path: string): string {
   return `${API_BASE_URL}${path}`;
 }

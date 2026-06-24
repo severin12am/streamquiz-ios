@@ -138,7 +138,7 @@ export async function updatePlayer(playerId: string, patch: Partial<Player>): Pr
 export async function resetPlayersForRound(gameId: string): Promise<void> {
   const { error } = await getSupabase()
     .from('players')
-    .update({ mc_index: null, transcript: '', correct: null, done: false })
+    .update({ mc_index: null, transcript: '', correct: null, done: false, answered_at: null })
     .eq('game_id', gameId);
   if (error) throw error;
 }
@@ -219,6 +219,7 @@ export async function joinGame(
       correct: null,
       done: false,
       rematch: false,
+      answered_at: null,
     })
     .select('*')
     .single();

@@ -1,8 +1,10 @@
 /** Mute / unmute game sound effects — keycap secondary toggle. */
 import React, { useEffect, useState } from 'react';
-import { Text, type ViewStyle } from 'react-native';
+import { type ViewStyle } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { isSoundsMuted, setSoundsMuted } from '@/lib/sounds';
 import { KeycapButton } from '@/components/KeycapButton';
+import { colors } from '@/theme';
 
 interface Props {
   style?: ViewStyle;
@@ -28,7 +30,11 @@ export function SoundToggle({ style }: Props) {
         setMuted(next);
       }}
     >
-      <Text style={{ fontSize: 16 }}>{muted ? '🔇' : '🔊'}</Text>
+      <MaterialIcons
+        name={muted ? 'volume-off' : 'volume-up'}
+        size={20}
+        color={muted ? colors.textMuted : colors.accent}
+      />
     </KeycapButton>
   );
 }

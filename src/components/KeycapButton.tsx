@@ -40,28 +40,29 @@ const FACES: Record<KeycapVariant, FaceStyle> = {
   primary: {
     face: colors.accentBright,
     facePressed: colors.accentHover,
-    stem: '#153d39',
+    // A darker shade of the same teal — reads as the keycap's bottom lip, not a slab.
+    stem: colors.accentHover,
     text: colors.onPrimary,
     border: colors.accentHover,
   },
   secondary: {
     face: colors.bgCard,
     facePressed: colors.bgElevated,
-    stem: '#bccfb1',
+    stem: '#d6dccf',
     text: colors.text,
     border: colors.borderStrong,
   },
   success: {
     face: colors.correct,
     facePressed: '#268a58',
-    stem: '#1a5238',
+    stem: '#268a58',
     text: colors.onPrimary,
     border: '#268a58',
   },
   danger: {
     face: colors.wrong,
     facePressed: '#b84a38',
-    stem: '#6b2a20',
+    stem: '#b84a38',
     text: colors.onPrimary,
     border: '#b84a38',
   },
@@ -189,22 +190,23 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.9 },
   stack: {
     position: 'relative',
-    paddingBottom: TRAVEL + 4,
+    paddingBottom: TRAVEL - 1,
   },
   stackCompact: {
-    paddingBottom: TRAVEL + 2,
+    paddingBottom: TRAVEL - 2,
   },
   stackFlat: {
     paddingBottom: 0,
   },
+  // Bottom "lip" of the keycap: a thin slab tucked behind the face (taller than
+  // the lip gap so the two never separate). Solid colour reads as a 3D edge.
   stem: {
     position: 'absolute',
-    left: 2,
-    right: 2,
+    left: 1,
+    right: 1,
     bottom: 0,
     height: TRAVEL + 3,
-    borderRadius: 10,
-    opacity: 0.85,
+    borderRadius: 12,
   },
   face: {
     borderRadius: 12,
@@ -214,10 +216,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#0f2320',
-    shadowOffset: { width: 0, height: TRAVEL + 2 },
-    shadowOpacity: 0.22,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   faceFlat: {
     shadowOpacity: 0,
