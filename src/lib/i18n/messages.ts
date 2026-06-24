@@ -135,6 +135,7 @@ const en = {
   restoreSuccess: 'Purchases restored.',
   restoreNone: 'No previous purchases found.',
   seePlans: 'See plans',
+  privacySupport: 'Privacy Policy & Support',
 } as const;
 
 const ru: typeof en = {
