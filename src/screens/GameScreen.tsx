@@ -203,8 +203,12 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
           questions.map((q) => q.question),
         );
         await rematch(questions);
-      } catch {
+      } catch (e) {
         rematchInFlight.current = false;
+        Alert.alert(
+          'Error',
+          e instanceof Error ? e.message : 'Failed to regenerate questions',
+        );
       } finally {
         setRematchLoading(false);
       }

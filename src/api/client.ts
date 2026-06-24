@@ -1,13 +1,28 @@
 /**
  * HTTP calls to deployed Next.js API — never relative URLs, never OpenAI keys in app.
  *
- * Routes: POST /api/generate-questions, POST /api/check-answer, GET /api/ice-servers
+ * Routes:
+ *   POST /api/create-game      — server-side game creation (see createGame.ts)
+ *   POST /api/generate-questions — rematch question regen (host only)
+ *   POST /api/check-answer, GET /api/ice-servers
  * Base URL: EXPO_PUBLIC_API_BASE_URL (see lib/config.ts)
  */
 import { api } from '@/lib/config';
 import { debugLog } from '@/lib/debug-log';
 import type { CreateGamePayload, Difficulty, Locale, Question } from '@/lib/types';
 
+export { createGame } from '@/api/createGame';
+export type { CreateGameResult } from '@/api/createGame';
+
+async function apiError(res: Response, fallback: string): Promise<never> {
+  const body = (await res.json().catch(() => ({}))) as { error?: string };
+  if (res.status === 429) {
+    throw new Error(body.error ?? 'Too many requests. Please wait a moment.');
+  }
+  throw new Error(body.error ?? fallback);
+}
+
+/** Rematch only — host regenerates questions for an existing game row. */
 export async function generateQuestions(payload: CreateGamePayload): Promise<Question[]> {
   const url = api('/api/generate-questions');
   debugLog('api', 'generate', 'POST', { url, topic: payload.topic });
@@ -26,9 +41,8 @@ export async function generateQuestions(payload: CreateGamePayload): Promise<Que
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    debugLog('error', 'generate', `failed ${res.status}`, text.slice(0, 200));
-    throw new Error(text || `generate-questions failed (${res.status})`);
+    debugLog('error', 'generate', `failed ${res.status}`);
+    await apiError(res, `generate-questions failed (${res.status})`);
   }
 
   const data = (await res.json()) as { questions?: Question[] };

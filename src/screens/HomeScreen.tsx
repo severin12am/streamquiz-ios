@@ -1,17 +1,15 @@
 /**
  * Home / create / join entry. Route: web "/".
  *
- * Create: API generate-questions → insert games row → navigate Game asHost:true.
+ * Create: POST /api/create-game (server creates row + questions) → navigate Game asHost:true.
  * Join: parse UUID from pasted link → navigate Game asHost:false.
  */
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, Pressable } from 'react-native';
 import * as Linking from 'expo-linking';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { generateQuestions } from '@/api/client';
-import { parseGameIdFromLink } from '@/api/client';
+import { createGame, parseGameIdFromLink } from '@/api/client';
 import { isConfigured } from '@/lib/config';
-import { getSupabase } from '@/lib/supabase';
 import { addQuestionsToHistory, getPreviousQuestions } from '@/lib/question-history';
 import { useLocale } from '@/context/LocaleProvider';
 import { useEntitlements } from '@/context/EntitlementsProvider';
@@ -64,7 +62,7 @@ export function HomeScreen({ navigation }: Props) {
 
     try {
       const previous = await getPreviousQuestions(params.topic);
-      const questions = await generateQuestions({
+      const { gameId, questions } = await createGame({
         ...params,
         locale,
         previous_questions: previous,
@@ -73,27 +71,8 @@ export function HomeScreen({ navigation }: Props) {
         params.topic,
         questions.map((q) => q.question),
       );
-
-      const { data, error } = await getSupabase()
-        .from('games')
-        .insert({
-          topic: params.topic,
-          difficulty: params.difficulty,
-          num_questions: params.num_questions,
-          mc_mode: params.mc_mode,
-          game_mode: params.game_mode,
-          cameras_enabled: params.cameras_enabled,
-          questions,
-          status: 'waiting',
-          phase: 'waiting',
-          current_question_index: 0,
-        })
-        .select('id')
-        .single();
-
-      if (error) throw error;
       await noteCreated();
-      navigation.navigate('Game', { gameId: data.id, asHost: true });
+      navigation.navigate('Game', { gameId, asHost: true });
     } catch (e) {
       Alert.alert('Error', e instanceof Error ? e.message : 'Failed to create game');
     }
