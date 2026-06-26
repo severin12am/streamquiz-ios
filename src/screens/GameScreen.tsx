@@ -89,6 +89,10 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
   const [pttHeld, setPttHeld] = useState(false);
   const [micMuted, setMicMuted] = useState(false);
   const [rematchLoading, setRematchLoading] = useState(false);
+  // Measured floating-UI band heights — define the middle band for the
+  // 2-player letterbox camera layout (mode 4).
+  const [topInset, setTopInset] = useState(0);
+  const [bottomInset, setBottomInset] = useState(0);
 
   const lastTranscriptWrite = useRef(0);
   const transcriptPending = useRef<string | null>(null);
@@ -398,6 +402,8 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
             cameraBlocked: camerasEnabled && Boolean(cameraError),
             micBlocked: Boolean(cameraError),
           }}
+          topInset={topInset}
+          bottomInset={bottomInset}
           t={t}
         />
       </View>
@@ -413,12 +419,20 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
       </View>
 
       {/* Top overlay: round + question + timer floating near the top. */}
-      <View style={styles.overlayTop} pointerEvents="box-none">
+      <View
+        style={styles.overlayTop}
+        pointerEvents="box-none"
+        onLayout={(e) => setTopInset(e.nativeEvent.layout.height)}
+      >
         <QuestionPanel {...sharedPanelProps} section="top" />
       </View>
 
       {/* Bottom overlay: answer buttons / results floating near the bottom. */}
-      <View style={styles.overlayBottom} pointerEvents="box-none">
+      <View
+        style={styles.overlayBottom}
+        pointerEvents="box-none"
+        onLayout={(e) => setBottomInset(e.nativeEvent.layout.height)}
+      >
         <ScrollView
           style={styles.panelScroll}
           contentContainerStyle={styles.panelContent}

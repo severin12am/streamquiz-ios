@@ -23,6 +23,7 @@ import {
 import {
   getCreateAllowance,
   recordCreate,
+  resetCreateQuota,
   type CreateAllowance,
 } from '@/lib/createQuota';
 
@@ -35,6 +36,8 @@ interface EntitlementsContextValue {
   refresh: () => Promise<CreateAllowance>;
   /** Record a successful create against the quota, then refresh. */
   noteCreated: () => Promise<void>;
+  /** __DEV__ only — wipe local create counters (free trial + monthly). */
+  resetQuotaForDev: () => Promise<CreateAllowance>;
 }
 
 const EntitlementsContext = createContext<EntitlementsContextValue | null>(null);
@@ -63,6 +66,12 @@ export function EntitlementsProvider({ children }: { children: React.ReactNode }
     await refreshWith(tierRef.current);
   }, [refreshWith]);
 
+  const resetQuotaForDev = useCallback(async (): Promise<CreateAllowance> => {
+    if (!__DEV__) return refreshWith(tierRef.current);
+    await resetCreateQuota();
+    return refreshWith(tierRef.current);
+  }, [refreshWith]);
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -84,8 +93,8 @@ export function EntitlementsProvider({ children }: { children: React.ReactNode }
   }, [refreshWith]);
 
   const value = useMemo<EntitlementsContextValue>(
-    () => ({ tier, allowance, loading, refresh, noteCreated }),
-    [tier, allowance, loading, refresh, noteCreated],
+    () => ({ tier, allowance, loading, refresh, noteCreated, resetQuotaForDev }),
+    [tier, allowance, loading, refresh, noteCreated, resetQuotaForDev],
   );
 
   return (

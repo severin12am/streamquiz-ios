@@ -89,3 +89,8 @@ export async function recordCreate(tier: Tier): Promise<void> {
   const used = await readInt(FREE_CREATES_KEY);
   await AsyncStorage.setItem(FREE_CREATES_KEY, String(used + 1));
 }
+
+/** __DEV__ only — clears local create counters so you can host again. */
+export async function resetCreateQuota(): Promise<void> {
+  await AsyncStorage.multiRemove([FREE_CREATES_KEY, MONTHLY_CREATES_KEY]);
+}

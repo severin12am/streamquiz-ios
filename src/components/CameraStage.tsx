@@ -1,22 +1,26 @@
 /**
  * Full-screen camera backdrop with tap-to-cycle layouts.
  *
- * Tapping ANY camera feed advances a single global layout index through a fixed
- * cycle — no settings UI. The quiz overlay (QuestionPanel, mic toggle) lives in
- * GameScreen and is unaffected; only the arrangement of feeds changes here.
+ * Tapping ANY camera feed advances a single local layout index (no settings UI).
+ * The quiz overlay (QuestionPanel, mic toggle) lives in GameScreen at a higher
+ * z-index and is unaffected — only the arrangement of feeds changes here.
  *
- * Cycle (built from the live player list, so it adapts to joins/leaves):
- *   1. grid          — opponents fill the screen, my feed is a top-right PiP (default look)
- *   2. grid-bottom   — same grid, my PiP moves to the bottom-right
- *   3. self-main     — my camera fills the screen, opponents become a bottom strip
- *   4..N spotlight   — each opponent in turn fills the screen, everyone else a top strip
+ * Layout schema lives in lib/planLayout.ts:
+ *   0  you PiP (top-right)      · others on stage (grid)
+ *   1  pipOther PiP (top-right) · you + remaining others on stage
+ *   2  you top 50%             · others bottom 50%
+ *   3  others top 50%          · you bottom 50%
+ *   4  letterbox (2p only)     · you + other, equal, middle band, no PiP
+ *
+ * Rules: at most one PiP (top-right); letterbox is 2-player only and is skipped
+ * from the cycle for 3–6 players.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { MediaStream } from 'react-native-webrtc';
 import type { GamePhase, Player } from '@/lib/types';
 import type { TranslateFn } from '@/lib/i18n';
-import { CameraGrid } from './CameraGrid';
+import { layoutModeCount, planLayout, stageGridColumns } from '@/lib/planLayout';
 import { CameraPanel } from './CameraPanel';
 
 interface LocalMediaStatus {
@@ -35,13 +39,11 @@ interface Props {
   phase: GamePhase;
   mcMode: boolean;
   localMedia: LocalMediaStatus;
+  /** Measured top-UI height — defines the top edge of the letterbox band. */
+  topInset?: number;
+  /** Measured bottom-UI height — defines the bottom edge of the letterbox band. */
+  bottomInset?: number;
   t: TranslateFn;
-}
-
-type LayoutKind = 'grid' | 'grid-bottom' | 'self-main' | 'spotlight';
-interface LayoutDesc {
-  kind: LayoutKind;
-  focusId?: string;
 }
 
 export function CameraStage({
@@ -54,24 +56,22 @@ export function CameraStage({
   phase,
   mcMode,
   localMedia,
+  topInset = 0,
+  bottomInset = 0,
   t,
 }: Props) {
-  const [index, setIndex] = useState(0);
+  const [layoutMode, setLayoutMode] = useState(0);
 
-  const others = players.filter((p) => p.id !== me.id);
+  const modeCount = layoutModeCount(players.length);
+  // Keep the index in range as players join/leave so the cycle stays sane.
+  useEffect(() => {
+    setLayoutMode((m) => m % modeCount);
+  }, [modeCount]);
 
-  const layouts: LayoutDesc[] =
-    others.length === 0
-      ? [{ kind: 'grid' }]
-      : [
-          { kind: 'grid' },
-          { kind: 'grid-bottom' },
-          { kind: 'self-main' },
-          ...others.map((o): LayoutDesc => ({ kind: 'spotlight', focusId: o.id })),
-        ];
+  const canCycle = players.some((p) => p.id !== me.id);
+  const advance = canCycle ? () => setLayoutMode((m) => (m + 1) % modeCount) : undefined;
 
-  const layout = layouts[index % layouts.length];
-  const advance = () => setIndex((i) => (i + 1) % layouts.length);
+  const plan = planLayout(me, players, layoutMode);
 
   const feedProps = (p: Player) => {
     const isLocal = p.id === me.id;
@@ -93,87 +93,67 @@ export function CameraStage({
     };
   };
 
-  const renderGrid = (gridPlayers: Player[]) => (
-    <Pressable style={StyleSheet.absoluteFill} onPress={advance}>
-      <CameraGrid
-        players={gridPlayers}
-        localStream={localStream}
-        remoteStreams={remoteStreams}
-        myId={me.id}
-        camerasEnabled={camerasEnabled}
-        showResult={showResult}
-        phase={phase}
-        mcMode={mcMode}
-        fill
-        t={t}
-        localMedia={localMedia}
-      />
-    </Pressable>
-  );
+  // Even N-up grid: ≤2 tiles stack in 1 column, 3+ tile into 2 columns (2+1, 2+2, …).
+  const renderGrid = (gridPlayers: Player[]) => {
+    const columns = stageGridColumns(gridPlayers.length);
+    const rows: Player[][] = [];
+    for (let i = 0; i < gridPlayers.length; i += columns) {
+      rows.push(gridPlayers.slice(i, i + columns));
+    }
+    return (
+      <View style={styles.gridRoot}>
+        {rows.map((row, ri) => (
+          <View key={ri} style={styles.gridRow}>
+            {row.map((p) => (
+              <View key={p.id} style={styles.gridCell}>
+                <CameraPanel {...feedProps(p)} />
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+    );
+  };
 
-  const renderMain = (player: Player) => (
-    <Pressable style={StyleSheet.absoluteFill} onPress={advance}>
+  const renderPip = (player: Player) => (
+    <Pressable style={styles.pip} onPress={advance}>
       <CameraPanel {...feedProps(player)} />
     </Pressable>
-  );
-
-  const renderPip = (player: Player, position: 'top' | 'bottom') => (
-    <Pressable
-      style={[styles.pip, position === 'top' ? styles.pipTop : styles.pipBottom]}
-      onPress={advance}
-    >
-      <CameraPanel {...feedProps(player)} />
-    </Pressable>
-  );
-
-  const renderStrip = (stripPlayers: Player[], position: 'top' | 'bottom') => (
-    <View
-      style={[styles.strip, position === 'top' ? styles.stripTop : styles.stripBottom]}
-      pointerEvents="box-none"
-    >
-      {stripPlayers.map((p) => (
-        <Pressable key={p.id} style={styles.stripTile} onPress={advance}>
-          <CameraPanel {...feedProps(p)} />
-        </Pressable>
-      ))}
-    </View>
   );
 
   let content: React.ReactNode;
-  switch (layout.kind) {
-    case 'grid-bottom':
+  switch (plan.kind) {
+    case 'letterbox':
+      // Two equal feeds clipped to the band between the top and bottom UI.
       content = (
-        <>
-          {renderGrid(others)}
-          {renderPip(me, 'bottom')}
-        </>
+        <Pressable
+          style={[styles.letterboxBand, { top: topInset, bottom: bottomInset }]}
+          onPress={advance}
+        >
+          {plan.pair.map((p) => (
+            <View key={p.id} style={styles.letterboxTile}>
+              <CameraPanel {...feedProps(p)} />
+            </View>
+          ))}
+        </Pressable>
       );
       break;
-    case 'self-main':
+    case 'split':
       content = (
-        <>
-          {renderMain(me)}
-          {renderStrip(others, 'bottom')}
-        </>
+        <Pressable style={StyleSheet.absoluteFill} onPress={advance}>
+          <View style={styles.half}>{renderGrid(plan.topHalf)}</View>
+          <View style={styles.half}>{renderGrid(plan.bottomHalf)}</View>
+        </Pressable>
       );
       break;
-    case 'spotlight': {
-      const focus = players.find((p) => p.id === layout.focusId) ?? others[0];
-      const rest = players.filter((p) => p.id !== focus.id);
-      content = (
-        <>
-          {renderMain(focus)}
-          {renderStrip(rest, 'top')}
-        </>
-      );
-      break;
-    }
     case 'grid':
     default:
       content = (
         <>
-          {renderGrid(others.length > 0 ? others : players)}
-          {others.length > 0 ? renderPip(me, 'top') : null}
+          <Pressable style={StyleSheet.absoluteFill} onPress={advance}>
+            {renderGrid(plan.stage)}
+          </Pressable>
+          {plan.pip ? renderPip(plan.pip) : null}
         </>
       );
       break;
@@ -183,8 +163,13 @@ export function CameraStage({
 }
 
 const styles = StyleSheet.create({
+  gridRoot: { flex: 1, gap: 6, padding: 6 },
+  gridRow: { flex: 1, flexDirection: 'row', gap: 6 },
+  gridCell: { flex: 1 },
+  half: { flex: 1 },
   pip: {
     position: 'absolute',
+    top: 8,
     right: 10,
     width: 116,
     height: 150,
@@ -197,30 +182,14 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 5,
   },
-  pipTop: { top: 8 },
-  pipBottom: { bottom: 96 },
-  strip: {
+  letterboxBand: {
     position: 'absolute',
     left: 0,
     right: 0,
     flexDirection: 'row',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
     gap: 6,
-    paddingHorizontal: 8,
-    zIndex: 15,
+    paddingHorizontal: 6,
+    zIndex: 5,
   },
-  stripTop: { top: 8 },
-  stripBottom: { bottom: 96 },
-  stripTile: {
-    width: 70,
-    height: 94,
-    borderRadius: 10,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
+  letterboxTile: { flex: 1 },
 });

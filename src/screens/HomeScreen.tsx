@@ -31,7 +31,7 @@ const LEGAL_URL = 'https://severin12am.github.io/whosmarter-legal';
 
 export function HomeScreen({ navigation }: Props) {
   const { t, locale, setLocale } = useLocale();
-  const { allowance, refresh, noteCreated } = useEntitlements();
+  const { allowance, refresh, noteCreated, resetQuotaForDev } = useEntitlements();
   const [joinInput, setJoinInput] = useState('');
 
   if (!isConfigured()) {
@@ -109,7 +109,27 @@ export function HomeScreen({ navigation }: Props) {
       <Text style={styles.steps}>{t('homeSteps')}</Text>
 
       {quotaLabel ? (
-        <Pressable style={styles.quotaPill} onPress={() => navigation.navigate('Paywall')}>
+        <Pressable
+          style={styles.quotaPill}
+          onPress={() => navigation.navigate('Paywall')}
+          onLongPress={
+            __DEV__
+              ? () => {
+                  Alert.alert('Reset create quota?', 'Dev only — restores your free trial counter.', [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Reset',
+                      onPress: () => {
+                        void resetQuotaForDev().then((a) =>
+                          Alert.alert('Quota reset', `${a.remaining} creates available.`),
+                        );
+                      },
+                    },
+                  ]);
+                }
+              : undefined
+          }
+        >
           <Text style={styles.quotaText}>{quotaLabel}</Text>
           <Text style={styles.quotaLink}>{t('seePlans')}</Text>
         </Pressable>
