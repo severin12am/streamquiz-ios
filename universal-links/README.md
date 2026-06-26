@@ -1,6 +1,8 @@
 # Universal Links — deploy to Netlify (web project)
 
-When this file is live on your site, tapping `https://streamquiz.netlify.app/game/{uuid}` on an iPhone **with WhoSmarter installed** opens the app directly into that game (guest join).
+When this file is live on your site, tapping `https://whosmarter.com/game/{uuid}` on an iPhone **with WhoSmarter installed** opens the app directly into that game (guest join).
+
+Legacy Netlify URLs (`https://streamquiz.netlify.app/game/{uuid}`) still open the app if that hostname also serves the same AASA file.
 
 If the app is **not** installed, the link opens in Safari as usual.
 
@@ -20,7 +22,7 @@ Place the file at:
 public/.well-known/apple-app-site-association
 ```
 
-No file extension. Commit and deploy.
+No file extension. Commit and deploy to the site that serves **whosmarter.com** (and streamquiz.netlify.app if you keep both domains).
 
 ## 3. Netlify headers (web `netlify.toml`)
 
@@ -35,7 +37,7 @@ Ensure JSON content-type (required by Apple):
 
 ## 4. Rebuild the iOS app
 
-After `app.config.ts` has `associatedDomains`, run:
+After `EXPO_PUBLIC_API_BASE_URL=https://whosmarter.com` and `associatedDomains` in `app.config.ts`, run:
 
 ```bash
 npx expo prebuild --platform ios --clean
@@ -47,7 +49,7 @@ Universal Links do **not** work in Simulator reliably — test on a physical iPh
 ## 5. Verify
 
 - Install the dev build on iPhone.
-- Send yourself an iMessage with `https://streamquiz.netlify.app/game/{real-uuid}`.
+- Send yourself an iMessage with `https://whosmarter.com/game/{real-uuid}`.
 - Long-press or tap → should offer **Open in WhoSmarter**.
 
 Apple’s CDN caches AASA files; changes can take up to 24h (often minutes).

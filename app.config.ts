@@ -1,6 +1,6 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
 
-/** Hostname from EXPO_PUBLIC_API_BASE_URL → applinks:streamquiz.netlify.app */
+/** Hostname from EXPO_PUBLIC_API_BASE_URL → applinks:whosmarter.com (or your custom domain) */
 function associatedDomains(): string[] {
   const base = process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
   if (!base) return [];

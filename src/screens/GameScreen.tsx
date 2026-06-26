@@ -9,7 +9,8 @@
  * iOS-specific:
  * - micPolicy: WebRTC mic OFF during voice answering (Speech uses mic); PTT between rounds.
  * - Transcript writes throttled to TRANSCRIPT_THROTTLE_MS (350ms).
- * - Host rematch: when host + ≥1 guest voted, regenerates questions via API.
+ * - Host rematch: when host + ≥1 guest voted, checks create quota, regenerates
+ *   questions via API, and counts as one create against quota.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
@@ -29,11 +30,13 @@ import { mergePreviousQuestions, getPreviousQuestions, addQuestionsToHistory } f
 import { getSavedName, saveName } from '@/lib/client-id';
 import { speechLangFor } from '@/lib/i18n';
 import { useLocale } from '@/context/LocaleProvider';
+import { useEntitlements } from '@/context/EntitlementsProvider';
 import { useGameState } from '@/hooks/useGameState';
 import { useGameSounds } from '@/hooks/useGameSounds';
 import { useMeshWebRTC } from '@/hooks/useMeshWebRTC';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { playSound } from '@/lib/sounds';
+import { updatePlayer } from '@/lib/supabase';
 import { SoundToggle } from '@/components/SoundToggle';
 import { MicToggle } from '@/components/MicToggle';
 import { JoinScreen } from '@/components/JoinScreen';
@@ -56,6 +59,7 @@ type Props = {
 export function GameScreen({ gameId, clientId, asHost }: Props) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { t, locale } = useLocale();
+  const { refresh, noteCreated } = useEntitlements();
   const {
     game,
     players,
@@ -186,6 +190,16 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     setRematchLoading(true);
     void (async () => {
       try {
+        const allowance = await refresh();
+        if (!allowance.allowed) {
+          rematchInFlight.current = false;
+          await updatePlayer(me.id, { rematch: false });
+          navigation.navigate('Paywall', {
+            reason: allowance.tier === 'free' ? 'trial' : 'monthly',
+          });
+          return;
+        }
+
         const previous = await getPreviousQuestions(game.topic);
         const merged = mergePreviousQuestions(previous, game.questions);
         const questions = await generateQuestions({
@@ -203,6 +217,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
           questions.map((q) => q.question),
         );
         await rematch(questions);
+        await noteCreated();
       } catch (e) {
         rematchInFlight.current = false;
         Alert.alert(
@@ -213,7 +228,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
         setRematchLoading(false);
       }
     })();
-  }, [game, me, players, locale, rematch]);
+  }, [game, me, players, locale, rematch, refresh, noteCreated, navigation]);
 
   useEffect(() => {
     if (me?.id) void startCamera();

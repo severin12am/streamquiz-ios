@@ -25,7 +25,7 @@ cp .env.example .env
 |----------|---------|
 | `EXPO_PUBLIC_SUPABASE_URL` | Same Supabase project as web |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
-| `EXPO_PUBLIC_API_BASE_URL` | Deployed web host, **no trailing slash** (e.g. `https://streamquiz.netlify.app`) |
+| `EXPO_PUBLIC_API_BASE_URL` | Deployed web host, **no trailing slash** (e.g. `https://whosmarter.com`) |
 | `EXPO_PUBLIC_REVENUECAT_IOS_KEY` | RevenueCat **public** iOS SDK key (`appl_…`). Optional — when unset, the creator paywall shows but purchases are disabled and only the free trial applies. See §12. |
 
 Never put `OPENAI_API_KEY` in the app — AI runs on the Next.js server. The RevenueCat *public* key is client-safe (it is not the secret API key).
@@ -81,7 +81,7 @@ npx expo run:ios
 
 **Server side** (web repo on Netlify): deploy `universal-links/apple-app-site-association` to `public/.well-known/` — see [`universal-links/README.md`](universal-links/README.md). You must set your Apple Team ID in that file.
 
-When both sides are deployed, tapping `https://streamquiz.netlify.app/game/{uuid}` on an iPhone with the app installed opens the game as guest. Without the app, Safari opens as usual.
+When both sides are deployed, tapping `https://whosmarter.com/game/{uuid}` on an iPhone with the app installed opens the game as guest. Without the app, Safari opens as usual. Old `streamquiz.netlify.app` links still work in the app (legacy deep-link prefix).
 
 Custom scheme still works: `whosmarter://game/{uuid}` (legacy `streamquiz://` also supported)
 
@@ -145,7 +145,7 @@ You **cannot** compile the iOS app on Windows. Options:
 |------|------------------|----------------|
 | Unit tests | `npm test` | Timing, scoring, join logic |
 | Web cross-play | PC Chrome + phone Safari (with VPN if needed) | Full game loop, same Supabase |
-| iOS **browser** | Safari on iPhone → `https://streamquiz.netlify.app` | Real iPhone network; not the native app |
+| iOS **browser** | Safari on iPhone → `https://whosmarter.com` | Real iPhone network; not the native app |
 
 The native app shares the same `useGameState` logic as this repo — web testing catches most sync/scoring bugs.
 
@@ -220,10 +220,10 @@ Everything else (lobby, MC, timers, rematch) you can validate with **web + `npm 
 | Tier | Allowance |
 |------|-----------|
 | Free trial | **5** quizzes ever, then a hard paywall |
-| `limited` | **30** quizzes per calendar month |
-| `unlimited` | No limit |
+| `basic` | **30** quizzes per calendar month |
+| `premium` | **300** quizzes per calendar month |
 
-Prices (set in App Store Connect, shown localized by StoreKit): **$12.99/mo** for 30 games, **$32.99/mo** for unlimited, each with an **annual plan at 20% off**.
+Prices (set in App Store Connect, shown localized by StoreKit): **$12.99/mo** for Basic (30 games), **$32.99/mo** for Premium (300 games), each with an **annual plan at 20% off**.
 
 Apple requires In-App Purchase for unlocking app functionality (Stripe is not allowed here), so subscriptions go through **StoreKit via RevenueCat** (`react-native-purchases`). Usage counters live per-install in `AsyncStorage` (`src/lib/createQuota.ts`); the *subscription* itself is owned by StoreKit and is restorable/cross-device.
 
@@ -237,17 +237,17 @@ The app runs fine **without** any billing setup: if `EXPO_PUBLIC_REVENUECAT_IOS_
 
    | Product (suggested ID) | Price | Maps to |
    |------------------------|-------|---------|
-   | `ws_limited_monthly` | $12.99 / mo | `limited` |
-   | `ws_limited_annual` | $124.99 / yr (~20% off) | `limited` |
-   | `ws_unlimited_monthly` | $32.99 / mo | `unlimited` |
-   | `ws_unlimited_annual` | $316.99 / yr (~20% off) | `unlimited` |
+   | `ws_basic_monthly` | $12.99 / mo | `basic` |
+   | `ws_basic_annual` | $124.99 / yr (~20% off) | `basic` |
+   | `ws_premium_monthly` | $32.99 / mo | `premium` |
+   | `ws_premium_annual` | $316.99 / yr (~20% off) | `premium` |
 
 2. **RevenueCat dashboard** ([app.revenuecat.com](https://app.revenuecat.com)):
    - Add the iOS app (bundle id `com.severin.whosmarter`) and the App Store Connect shared secret.
-   - Create two **entitlements**: `limited` and `unlimited`.
-   - Attach the limited products to `limited`, the unlimited products to `unlimited`.
+   - Create two **entitlements**: `basic` and `premium`.
+   - Attach the basic products to `basic`, the premium products to `premium`.
    - Create a **default Offering** whose packages use these **identifiers** (the code maps by them):
-     `LIMITED_MONTHLY`, `LIMITED_ANNUAL`, `UNLIMITED_MONTHLY`, `UNLIMITED_ANNUAL`.
+     `BASIC_MONTHLY`, `BASIC_ANNUAL`, `PREMIUM_MONTHLY`, `PREMIUM_ANNUAL`.
    - Copy the **public iOS SDK key** (`appl_…`).
 
 3. Set the key in `eas.json` (replace `appl_REPLACE_WITH_REVENUECAT_IOS_KEY`) or your local `.env`.
@@ -261,7 +261,7 @@ eas build --profile development --platform ios   # or npx expo run:ios on a Mac
 
 5. Test purchases in TestFlight or with a StoreKit sandbox Apple ID. Identifiers (entitlements, package IDs, fallback prices) can be tweaked in `src/lib/purchases.ts`.
 
-> If you change entitlement names, the `30 games/month` cap value, or the `5` free-trial count, edit the constants at the top of `src/lib/purchases.ts`.
+> If you change entitlement names, the monthly cap values (`BASIC_MONTHLY_GAMES`, `PREMIUM_MONTHLY_GAMES`), or the `5` free-trial count, edit the constants at the top of `src/lib/purchases.ts`.
 
 ## Troubleshooting
 

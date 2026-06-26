@@ -411,7 +411,7 @@ export function useMeshWebRTC(
     const channel = channelRef.current;
     if (!channel || !myId) return;
 
-    const presence = channel.presenceState() as Record<string, unknown[]>;
+    const presence = (channel.presenceState() ?? {}) as Record<string, unknown[]>;
     const present = new Set(Object.keys(presence).filter((id) => id !== myId));
 
     let changed = false;

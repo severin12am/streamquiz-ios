@@ -1,8 +1,8 @@
 /**
  * RevenueCat (StoreKit) integration for the creator paywall.
  *
- * Joining a quiz is always free; only *creating* a quiz is gated. Apple requires
- * In-App Purchase for unlocking app functionality, so subscriptions go through
+ * Joining a quiz is always free; creating a quiz or rematching (fresh AI questions) is gated.
+ * Apple requires In-App Purchase for unlocking app functionality, so subscriptions go through
  * StoreKit via RevenueCat (react-native-purchases).
  *
  * The native module is loaded lazily and every call is guarded, so the app keeps
@@ -10,27 +10,36 @@
  * In those cases the user simply stays on the free trial.
  *
  * App Store Connect / RevenueCat setup (see SETUP.md → Monetization):
- *  - Entitlements:  `limited` (30 games / month) and `unlimited`.
+ *  - Entitlements:  `basic` (30 games / month) and `premium` (300 games / month).
  *  - Products mapped into a single offering with these package identifiers:
- *      LIMITED_MONTHLY, LIMITED_ANNUAL, UNLIMITED_MONTHLY, UNLIMITED_ANNUAL.
+ *      BASIC_MONTHLY, BASIC_ANNUAL, PREMIUM_MONTHLY, PREMIUM_ANNUAL.
  */
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 import { REVENUECAT_IOS_KEY, isBillingConfigured } from '@/lib/config';
 import { debugLog } from '@/lib/debug-log';
 
 /** Subscription tier resolved from active RevenueCat entitlements. */
-export type Tier = 'free' | 'limited' | 'unlimited';
+export type Tier = 'free' | 'basic' | 'premium';
 
 /** Billing period for a purchasable package. */
 export type BillingPeriod = 'monthly' | 'annual';
 
-export const ENTITLEMENT_LIMITED = 'limited';
-export const ENTITLEMENT_UNLIMITED = 'unlimited';
+export const ENTITLEMENT_BASIC = 'basic';
+export const ENTITLEMENT_PREMIUM = 'premium';
 
-/** Games a `limited` subscriber can create per calendar month. */
-export const LIMITED_MONTHLY_GAMES = 30;
+/** Games a `basic` subscriber can create per calendar month. */
+export const BASIC_MONTHLY_GAMES = 30;
+/** Games a `premium` subscriber can create per calendar month. */
+export const PREMIUM_MONTHLY_GAMES = 300;
 /** Free quizzes a brand-new user can create before the hard paywall. */
 export const FREE_TRIAL_CREATES = 5;
+
+/** Monthly create cap for a paid tier, or null for the free trial tier. */
+export function monthlyCreateLimit(tier: Tier): number | null {
+  if (tier === 'basic') return BASIC_MONTHLY_GAMES;
+  if (tier === 'premium') return PREMIUM_MONTHLY_GAMES;
+  return null;
+}
 
 /**
  * A purchasable option shown on the paywall. `price` is the StoreKit-localized
@@ -51,37 +60,53 @@ export interface PaywallOption {
 
 /** Fallback prices (USD) used when StoreKit offerings are unavailable. */
 const FALLBACK_PRICES: Record<string, string> = {
-  LIMITED_MONTHLY: '$12.99',
-  LIMITED_ANNUAL: '$124.99',
-  UNLIMITED_MONTHLY: '$32.99',
-  UNLIMITED_ANNUAL: '$316.99',
+  BASIC_MONTHLY: '$12.99',
+  BASIC_ANNUAL: '$124.99',
+  PREMIUM_MONTHLY: '$32.99',
+  PREMIUM_ANNUAL: '$316.99',
 };
 
 const PACKAGE_TIER: Record<string, Exclude<Tier, 'free'>> = {
-  LIMITED_MONTHLY: 'limited',
-  LIMITED_ANNUAL: 'limited',
-  UNLIMITED_MONTHLY: 'unlimited',
-  UNLIMITED_ANNUAL: 'unlimited',
+  BASIC_MONTHLY: 'basic',
+  BASIC_ANNUAL: 'basic',
+  PREMIUM_MONTHLY: 'premium',
+  PREMIUM_ANNUAL: 'premium',
 };
 
 const PACKAGE_PERIOD: Record<string, BillingPeriod> = {
-  LIMITED_MONTHLY: 'monthly',
-  LIMITED_ANNUAL: 'annual',
-  UNLIMITED_MONTHLY: 'monthly',
-  UNLIMITED_ANNUAL: 'annual',
+  BASIC_MONTHLY: 'monthly',
+  BASIC_ANNUAL: 'annual',
+  PREMIUM_MONTHLY: 'monthly',
+  PREMIUM_ANNUAL: 'annual',
 };
 
 /** Order options appear on the paywall. */
-const PACKAGE_ORDER = ['LIMITED_MONTHLY', 'LIMITED_ANNUAL', 'UNLIMITED_MONTHLY', 'UNLIMITED_ANNUAL'];
+const PACKAGE_ORDER = ['BASIC_MONTHLY', 'BASIC_ANNUAL', 'PREMIUM_MONTHLY', 'PREMIUM_ANNUAL'];
 
 type PurchasesModule = typeof import('react-native-purchases').default;
 
 let purchasesModule: PurchasesModule | null | undefined;
 let configured = false;
 
+/** True when the native RevenueCat module is linked in this dev/production build. */
+function nativePurchasesLinked(): boolean {
+  if (Platform.OS !== 'ios') return false;
+  // Avoid require('react-native-purchases') when native isn't in the binary — loading
+  // the JS module alone crashes (NativeJSLogger) on older dev clients.
+  return Boolean(
+    NativeModules.RNPurchases ??
+      NativeModules.RNPurchasesModule ??
+      NativeModules.Purchases,
+  );
+}
+
 /** Lazily resolve the native module; returns null if unavailable. */
 function getPurchases(): PurchasesModule | null {
   if (purchasesModule !== undefined) return purchasesModule;
+  if (!nativePurchasesLinked()) {
+    purchasesModule = null;
+    return null;
+  }
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     purchasesModule = require('react-native-purchases').default as PurchasesModule;
@@ -117,8 +142,8 @@ type CustomerInfoLike = {
 /** Map a RevenueCat CustomerInfo to our tier (highest entitlement wins). */
 export function tierFromCustomerInfo(info: CustomerInfoLike | null | undefined): Tier {
   const active = info?.entitlements?.active ?? {};
-  if (active[ENTITLEMENT_UNLIMITED]) return 'unlimited';
-  if (active[ENTITLEMENT_LIMITED]) return 'limited';
+  if (active[ENTITLEMENT_PREMIUM]) return 'premium';
+  if (active[ENTITLEMENT_BASIC]) return 'basic';
   return 'free';
 }
 

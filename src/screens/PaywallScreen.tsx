@@ -1,10 +1,10 @@
 /**
  * Creator paywall. Joining quizzes is always free; this screen sells the two
- * creation plans (30 games / month and Unlimited), each with a monthly or
- * annual (20% off) billing period.
+ * creation plans (Basic: 30 games / month, Premium: 300 games / month), each
+ * with a monthly or annual (20% off) billing period.
  *
  * Reached from HomeScreen when the free trial (5 quizzes) is used up, or when a
- * `limited` subscriber hits their 30/month cap. Purchases go through StoreKit
+ * paid subscriber hits their monthly cap. Purchases go through StoreKit
  * via RevenueCat (src/lib/purchases.ts); when billing isn't configured on the
  * build, the plans render with fallback prices and Subscribe is disabled.
  */
@@ -36,7 +36,7 @@ import { colors } from '@/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Paywall'>;
 
-const PLAN_TIERS: Exclude<Tier, 'free'>[] = ['limited', 'unlimited'];
+const PLAN_TIERS: Exclude<Tier, 'free'>[] = ['basic', 'premium'];
 
 export function PaywallScreen({ navigation, route }: Props) {
   const { t } = useLocale();
@@ -143,15 +143,14 @@ export function PaywallScreen({ navigation, route }: Props) {
         PLAN_TIERS.map((tier) => {
           const option = optionFor(tier);
           const isCurrent = currentTier === tier;
-          const name = tier === 'limited' ? t('planLimited') : t('planUnlimited');
-          const desc =
-            tier === 'limited' ? t('planLimitedDesc') : t('planUnlimitedDesc');
+          const name = tier === 'basic' ? t('planBasic') : t('planPremium');
+          const desc = tier === 'basic' ? t('planBasicDesc') : t('planPremiumDesc');
           const suffix = period === 'annual' ? t('perYear') : t('perMonth');
           return (
-            <View key={tier} style={[styles.card, tier === 'unlimited' && styles.cardFeatured]}>
+            <View key={tier} style={[styles.card, tier === 'premium' && styles.cardFeatured]}>
               <View style={styles.cardHeader}>
                 <Text style={styles.planName}>{name}</Text>
-                {tier === 'unlimited' ? (
+                {tier === 'premium' ? (
                   <View style={styles.bestBadge}>
                     <Text style={styles.bestBadgeText}>★</Text>
                   </View>
@@ -168,7 +167,7 @@ export function PaywallScreen({ navigation, route }: Props) {
                 </View>
               ) : (
                 <KeycapButton
-                  variant={tier === 'unlimited' ? 'primary' : 'secondary'}
+                  variant={tier === 'premium' ? 'primary' : 'secondary'}
                   disabled={busy}
                   onPress={() => handleSubscribe(tier)}
                 >

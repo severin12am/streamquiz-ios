@@ -75,7 +75,7 @@ No accounts, no login walls. Share a link or QR code. Appropriate for friends-an
 
 ### Creator monetization (iOS)
 
-On the native iOS app, **hosting** (creating new quizzes) is monetized: a **5-quiz lifetime free trial** per install, then optional **limited** (30/month) or **unlimited** subscriptions through Apple In-App Purchase. **Joining and playing remain free** for everyone, on every platform.
+On the native iOS app, **hosting** (creating new quizzes) is monetized: a **5-quiz lifetime free trial** per install, then optional **basic** (30/month) or **premium** (300/month) subscriptions through Apple In-App Purchase. **Joining and playing remain free** for everyone, on every platform.
 
 ---
 
@@ -116,7 +116,7 @@ Changes to schema, phase timing, or API contracts must consider all clients. See
 6. App calls `noteCreated()` to increment the local usage counter.
 7. Navigates to **Game** with `asHost: true` → host claims slot 0.
 
-A **quota pill** on Home shows remaining allowance (e.g. "3 free quizzes left" or "12 left this month" for `limited` subscribers). Tapping it opens the paywall. **Joining is never gated.**
+A **quota pill** on Home shows remaining allowance (e.g. "3 free quizzes left" or "12 left this month" for paid subscribers). Tapping it opens the paywall. **Joining is never gated.**
 
 **Join a game (guest):**
 
@@ -197,7 +197,7 @@ Sound: `useGameSounds` plays a **join** chime when a new player row appears.
 - Ranked list sorted by score (ties broken by lower slot number).
 - Sole winner hero card with trophy emoji; tie shows multiple names; zero-score game shows handshake emoji.
 - **Rematch** button sets `rematch: true` on the player's row.
-- When **host** and **≥1 guest** have voted, host client auto-fetches fresh AI questions (merged dedup history) and calls `rematch(questions)` — returns to lobby with reset scores.
+- When **host** and **≥1 guest** have voted, host client checks create quota, auto-fetches fresh AI questions (merged dedup history), calls `rematch(questions)`, and records one create against quota — returns to lobby with reset scores.
 
 ---
 
@@ -894,7 +894,8 @@ This section documents the **creator paywall** added to the native iOS client. I
 | **Join** a quiz (guest) | Always free |
 | **Create** a quiz (host) on iOS | Gated — free trial, then subscription |
 | **Create** on web | Not gated by this repo (no paywall in Next.js client) |
-| **Play** (answer questions, video, rematch) | Free for everyone once in a game |
+| **Play** (answer questions, video) | Free for everyone once in a game |
+| **Rematch** (host, fresh AI questions) | Counts as one create against host quota |
 
 Apple requires In-App Purchase for unlocking app functionality on iOS, so paid plans use **StoreKit** via **RevenueCat** (`react-native-purchases`). External payment (e.g. Stripe in-app) is not used for unlocking create access.
 
@@ -905,10 +906,10 @@ Three logical tiers (`Tier` in `src/lib/purchases.ts`):
 | Tier | How obtained | Create allowance | Resets |
 |------|--------------|------------------|--------|
 | **`free`** | Default; no active subscription | **5 quizzes ever** (`FREE_TRIAL_CREATES`) | Never — lifetime per install |
-| **`limited`** | Active `limited` RevenueCat entitlement | **30 quizzes / calendar month** (`LIMITED_MONTHLY_GAMES`) | 1st of each month (local time) |
-| **`unlimited`** | Active `unlimited` RevenueCat entitlement | No limit | — |
+| **`basic`** | Active `basic` RevenueCat entitlement | **30 quizzes / calendar month** (`BASIC_MONTHLY_GAMES`) | 1st of each month (local time) |
+| **`premium`** | Active `premium` RevenueCat entitlement | **300 quizzes / calendar month** (`PREMIUM_MONTHLY_GAMES`) | 1st of each month (local time) |
 
-When the free trial is exhausted → **hard paywall** (cannot create until subscribed or restored). When a `limited` subscriber hits 30 in a month → paywall with `reason: 'monthly'`.
+When the free trial is exhausted → **hard paywall** (cannot create until subscribed or restored). When a paid subscriber hits their monthly cap → paywall with `reason: 'monthly'`.
 
 Constants live at the top of `src/lib/purchases.ts`; change entitlement names, trial count, or monthly cap there.
 
@@ -918,19 +919,19 @@ Four auto-renewable products in one RevenueCat **Offering**, mapped by package i
 
 | Package ID | Tier | Billing | Fallback price (USD) |
 |------------|------|---------|----------------------|
-| `LIMITED_MONTHLY` | limited | Monthly | $12.99/mo |
-| `LIMITED_ANNUAL` | limited | Annual (~20% off) | $124.99/yr |
-| `UNLIMITED_MONTHLY` | unlimited | Monthly | $32.99/mo |
-| `UNLIMITED_ANNUAL` | unlimited | Annual (~20% off) | $316.99/yr |
+| `BASIC_MONTHLY` | basic | Monthly | $12.99/mo |
+| `BASIC_ANNUAL` | basic | Annual (~20% off) | $124.99/yr |
+| `PREMIUM_MONTHLY` | premium | Monthly | $32.99/mo |
+| `PREMIUM_ANNUAL` | premium | Annual (~20% off) | $316.99/yr |
 
-StoreKit shows **localized** prices when offerings load; fallback strings display when billing is unavailable. Suggested App Store Connect product IDs: `ws_limited_monthly`, `ws_limited_annual`, `ws_unlimited_monthly`, `ws_unlimited_annual` (see `SETUP.md` §12).
+StoreKit shows **localized** prices when offerings load; fallback strings display when billing is unavailable. Suggested App Store Connect product IDs: `ws_basic_monthly`, `ws_basic_annual`, `ws_premium_monthly`, `ws_premium_annual` (see `SETUP.md` §12).
 
 RevenueCat **entitlements** (must match code):
 
-- `limited` — attaches to both limited monthly/annual products
-- `unlimited` — attaches to both unlimited monthly/annual products
+- `basic` — attaches to both basic monthly/annual products
+- `premium` — attaches to both premium monthly/annual products
 
-If both entitlements are active, **`unlimited` wins** (`tierFromCustomerInfo`).
+If both entitlements are active, **`premium` wins** (`tierFromCustomerInfo`).
 
 ### Two layers of state: subscription vs usage
 
@@ -942,7 +943,7 @@ Because the app has **no user accounts** (anonymous, link-based games), create u
 | **Free-trial count** | AsyncStorage `whosmarter-free-creates` | Per install | No |
 | **Monthly create count** | AsyncStorage `whosmarter-monthly-creates` (`{ month: "YYYY-MM", count }`) | Per install | No |
 
-Implication: a `limited` subscriber who reinstalls the app keeps their subscription (restore) but **monthly counter resets** on that device. The free trial counter also resets on reinstall (5 more creates) unless/until tied to an Apple ID server-side in a future version.
+Implication: a paid subscriber who reinstalls the app keeps their subscription (restore) but **monthly counter resets** on that device. The free trial counter also resets on reinstall (5 more creates) unless/until tied to an Apple ID server-side in a future version.
 
 ### Code architecture
 
@@ -975,14 +976,14 @@ App.tsx
 1. User taps **Create Challenge** on Home.
 2. `handleCreate` calls `refresh()` → `getCreateAllowance(currentTier)`.
 3. If `allowed === false`:
-   - Navigate to **Paywall** with `reason: 'trial'` (free tier exhausted) or `reason: 'monthly'` (limited cap hit).
+   - Navigate to **Paywall** with `reason: 'trial'` (free tier exhausted) or `reason: 'monthly'` (monthly cap hit).
    - No API call, no Supabase insert — AI tokens not spent.
 4. Paywall shows:
-   - Eyebrow: *"You've used all your free quizzes"* or *"You've created all 30 quizzes this month"*
+   - Eyebrow: *"You've used all your free quizzes"* or *"You've used all your quizzes for this month"*
    - Title: **Unlock quiz creation**
    - Subtitle: *Joining quizzes is always free. Choose a plan to keep creating your own.*
    - **Monthly / Annual** toggle (annual tab shows "Save 20%")
-   - Two plan cards: **30 games / month** and **Unlimited games** (featured)
+   - Two plan cards: **Basic — 30 games / month** and **Premium — 300 games / month** (featured)
    - **Subscribe** → StoreKit sheet via RevenueCat
    - **Restore purchases** (App Store requirement)
    - Footer: auto-renewal terms
@@ -1004,7 +1005,7 @@ This supports local dev, Simulator without StoreKit setup, and Windows-side Metr
 ### Enabling production purchases
 
 1. App Store Connect — subscription group + 4 products (see `SETUP.md` §12).
-2. RevenueCat dashboard — entitlements `limited` / `unlimited`, default offering with package IDs above, copy public iOS SDK key.
+2. RevenueCat dashboard — entitlements `basic` / `premium`, default offering with package IDs above, copy public iOS SDK key.
 3. Set `EXPO_PUBLIC_REVENUECAT_IOS_KEY=appl_…` in `.env` or `eas.json`.
 4. **Rebuild native client** (`expo prebuild --clean`, EAS build, or `expo run:ios`) — `react-native-purchases` is a native module.
 5. Test with TestFlight or StoreKit sandbox Apple ID.
@@ -1012,13 +1013,14 @@ This supports local dev, Simulator without StoreKit setup, and Windows-side Metr
 ### What is not monetized
 
 - Joining as guest (link, QR, Universal Link)
-- Playing rounds, scoring, rematch (including host rematch on an **existing** game — rematch does not consume create quota)
+- Playing rounds, scoring (joining and in-round play stay free)
+- Rematch counts as one create against the host's quota (same as starting a new game)
 - Web client game creation (no paywall in this repo's web counterpart)
 - Cross-platform guests in a game created by a paying iOS host
 
 ### i18n strings
 
-Paywall copy lives in `src/lib/i18n/messages.ts` (`paywallTitle`, `planLimited`, `planUnlimited`, `billingAnnualSave`, etc.). English and Russian locales include these keys.
+Paywall copy lives in `src/lib/i18n/messages.ts` (`paywallTitle`, `planBasic`, `planPremium`, `billingAnnualSave`, etc.). English and Russian locales include these keys.
 
 ---
 
@@ -1033,7 +1035,7 @@ Paywall copy lives in `src/lib/i18n/messages.ts` (`paywallTitle`, `planLimited`,
 | Multiplayer | `players` table, 6 seats, independent scoring |
 | Modes refresh | `regular` / `hardcore`, fixed 20s timers, `answered_at` |
 | Mobile | This Expo iOS client, 7 locales, WhatsApp-style layout, mic policy |
-| Monetization | iOS creator paywall — 5-quiz free trial, limited/unlimited subscriptions via RevenueCat |
+| Monetization | iOS creator paywall — 5-quiz free trial, basic/premium subscriptions via RevenueCat |
 | Ecosystem | Swift native client shares same backend |
 
 Legacy DB columns and unused web components remain; active path is documented in `PROJECT.md` and this file.
@@ -1042,4 +1044,4 @@ Legacy DB columns and unused web components remain; active path is documented in
 
 *WhoSmarter — real-time multiplayer quiz with AI-generated questions, optional peer-to-peer video, cross-platform play between iOS and web, and server-authoritative phase timing without a dedicated game server.*
 
-*Document version: extended. Last aligned with: 6-player multiplayer, `regular`/`hardcore` modes, 7 locales, cameras on by default, lagoon iOS UI, WhatsApp-style in-game layout, iOS creator paywall (5-quiz free trial, limited 30/mo + unlimited subscriptions via RevenueCat/StoreKit).*
+*Document version: extended. Last aligned with: 6-player multiplayer, `regular`/`hardcore` modes, 7 locales, cameras on by default, lagoon iOS UI, WhatsApp-style in-game layout, iOS creator paywall (5-quiz free trial, basic 30/mo + premium 300/mo subscriptions via RevenueCat/StoreKit).*

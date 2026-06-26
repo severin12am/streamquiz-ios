@@ -12,7 +12,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import { getClientId } from '@/lib/client-id';
 import { parseGameIdFromLink } from '@/api/client';
-import { API_BASE_URL } from '@/lib/config';
+import { API_BASE_URL, LEGACY_API_BASE_URL } from '@/lib/config';
 import { debugLog } from '@/lib/debug-log';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { GameScreen } from '@/screens/GameScreen';
@@ -31,6 +31,7 @@ const linking: LinkingOptions<RootStackParamList> = {
     'whosmarter://',
     'streamquiz://',
     ...(API_BASE_URL ? [API_BASE_URL] : []),
+    ...(API_BASE_URL !== LEGACY_API_BASE_URL ? [LEGACY_API_BASE_URL] : []),
   ],
   config: {
     screens: {

@@ -22,6 +22,9 @@ export const API_BASE_URL = (
   ''
 ).replace(/\/$/, '');
 
+/** Previous Netlify hostname — still accepted for Universal Links / pasted join URLs. */
+export const LEGACY_API_BASE_URL = 'https://streamquiz.netlify.app';
+
 /** RevenueCat public iOS SDK key. Empty → IAP disabled, free trial only. */
 export const REVENUECAT_IOS_KEY = (
   (extra.revenueCatIosKey as string | undefined) ??

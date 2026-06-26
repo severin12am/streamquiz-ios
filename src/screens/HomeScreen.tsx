@@ -80,9 +80,8 @@ export function HomeScreen({ navigation }: Props) {
 
   const quotaLabel = (() => {
     if (!allowance) return null;
-    if (allowance.tier === 'unlimited' || allowance.remaining === Infinity) return null;
     const suffix =
-      allowance.tier === 'limited' ? t('paywallMonthlyLeft') : t('paywallFreeLeft');
+      allowance.tier === 'free' ? t('paywallFreeLeft') : t('paywallMonthlyLeft');
     return `${allowance.remaining} ${suffix}`;
   })();
 

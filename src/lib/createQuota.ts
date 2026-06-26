@@ -1,16 +1,17 @@
 /**
- * Local "create a quiz" quota — gates game creation only (joining is always free).
+ * Local "create a quiz" quota — gates hosting only (joining is always free).
+ * Each new game and each rematch (fresh AI questions) counts as one create.
  *
  *  - free       → FREE_TRIAL_CREATES (5) quizzes ever, then a hard paywall.
- *  - limited    → LIMITED_MONTHLY_GAMES (30) quizzes per calendar month.
- *  - unlimited  → no limit.
+ *  - basic      → BASIC_MONTHLY_GAMES (30) quizzes per calendar month.
+ *  - premium    → PREMIUM_MONTHLY_GAMES (300) quizzes per calendar month.
  *
  * There is no account system in this app (anonymous, link-based), so usage is
  * tracked per-install in AsyncStorage. Subscription state itself is owned by
  * StoreKit/RevenueCat (cross-device, restorable); only the counters live here.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FREE_TRIAL_CREATES, LIMITED_MONTHLY_GAMES, type Tier } from '@/lib/purchases';
+import { FREE_TRIAL_CREATES, monthlyCreateLimit, type Tier } from '@/lib/purchases';
 
 const FREE_CREATES_KEY = 'whosmarter-free-creates';
 const MONTHLY_CREATES_KEY = 'whosmarter-monthly-creates';
@@ -47,27 +48,25 @@ async function readMonthly(): Promise<MonthlyRecord> {
 export interface CreateAllowance {
   allowed: boolean;
   tier: Tier;
-  /** Quizzes used in the current window (free: ever; limited: this month). */
+  /** Quizzes used in the current window (free: ever; paid: this month). */
   used: number;
-  /** Window cap (Infinity for unlimited). */
+  /** Window cap for the current tier. */
   limit: number;
-  /** Quizzes left before the paywall (Infinity for unlimited). */
+  /** Quizzes left before the paywall. */
   remaining: number;
 }
 
 /** Whether the user may create another quiz right now, with usage details. */
 export async function getCreateAllowance(tier: Tier): Promise<CreateAllowance> {
-  if (tier === 'unlimited') {
-    return { allowed: true, tier, used: 0, limit: Infinity, remaining: Infinity };
-  }
-  if (tier === 'limited') {
+  const monthlyLimit = monthlyCreateLimit(tier);
+  if (monthlyLimit != null) {
     const { count } = await readMonthly();
-    const remaining = Math.max(0, LIMITED_MONTHLY_GAMES - count);
+    const remaining = Math.max(0, monthlyLimit - count);
     return {
       allowed: remaining > 0,
       tier,
       used: count,
-      limit: LIMITED_MONTHLY_GAMES,
+      limit: monthlyLimit,
       remaining,
     };
   }
@@ -81,8 +80,7 @@ export async function getCreateAllowance(tier: Tier): Promise<CreateAllowance> {
  * Call only after the game row is actually created.
  */
 export async function recordCreate(tier: Tier): Promise<void> {
-  if (tier === 'unlimited') return;
-  if (tier === 'limited') {
+  if (monthlyCreateLimit(tier) != null) {
     const { month, count } = await readMonthly();
     const next: MonthlyRecord = { month, count: count + 1 };
     await AsyncStorage.setItem(MONTHLY_CREATES_KEY, JSON.stringify(next));

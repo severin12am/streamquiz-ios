@@ -22,8 +22,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_k2II_OqsMXkSqfuHNzs9Cg_JCsCgyFc
 
 ## Deployed API base (mobile)
 
-`https://streamquiz.netlify.app`
+Primary: `https://whosmarter.com` (legacy alias: `https://streamquiz.netlify.app`)
 
+- `POST /api/create-game`
 - `POST /api/generate-questions`
 - `POST /api/check-answer`
 - `GET /api/ice-servers`
