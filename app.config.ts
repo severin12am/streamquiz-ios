@@ -28,7 +28,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     backgroundColor: '#eef3ec',
   },
   ios: {
-    supportsTablet: true,
+    supportsTablet: false,
     bundleIdentifier: 'com.severin.whosmarter',
     associatedDomains: associatedDomains(),
     infoPlist: {
