@@ -9,16 +9,23 @@
  */
 import { api } from '@/lib/config';
 import { debugLog } from '@/lib/debug-log';
+import type { CreateAllowance } from '@/lib/createQuota';
 import type { CreateGamePayload, Question } from '@/lib/types';
+import { quotaRequestHeaders } from '@/api/quotaHeaders';
 
 export interface CreateGameResult {
   gameId: string;
   questions: Question[];
   provider?: string;
+  /** Present when the server enforces quota (see server-reference/). */
+  quota?: CreateAllowance;
 }
 
 async function apiError(res: Response, fallback: string): Promise<never> {
   const body = (await res.json().catch(() => ({}))) as { error?: string };
+  if (res.status === 402) {
+    throw new Error(body.error ?? 'Create quota exceeded.');
+  }
   if (res.status === 429) {
     throw new Error(body.error ?? 'Too many games created. Please wait a moment.');
   }
@@ -33,10 +40,10 @@ export async function createGame(
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
+    headers: await quotaRequestHeaders({
       'Content-Type': 'application/json',
       'X-WhoSmarter-Client': 'ios',
-    },
+    }),
     body: JSON.stringify({
       topic: payload.topic.slice(0, 200),
       difficulty: payload.difficulty,

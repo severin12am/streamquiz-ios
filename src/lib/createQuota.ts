@@ -56,8 +56,36 @@ export interface CreateAllowance {
   remaining: number;
 }
 
+/** Last quota snapshot returned by the server (authoritative when set). */
+let serverSnapshot: CreateAllowance | null = null;
+
+/** Apply quota from a create-game / generate-questions / GET /api/quota response. */
+export function applyServerQuota(snapshot: CreateAllowance): CreateAllowance {
+  serverSnapshot = snapshot;
+  void syncLocalFromSnapshot(snapshot);
+  return snapshot;
+}
+
+export function clearServerQuotaCache(): void {
+  serverSnapshot = null;
+}
+
+async function syncLocalFromSnapshot(snapshot: CreateAllowance): Promise<void> {
+  const month = currentMonth();
+  if (snapshot.tier === 'free') {
+    await AsyncStorage.setItem(FREE_CREATES_KEY, String(snapshot.used));
+    return;
+  }
+  await AsyncStorage.setItem(
+    MONTHLY_CREATES_KEY,
+    JSON.stringify({ month, count: snapshot.used } satisfies MonthlyRecord),
+  );
+}
+
 /** Whether the user may create another quiz right now, with usage details. */
 export async function getCreateAllowance(tier: Tier): Promise<CreateAllowance> {
+  if (serverSnapshot) return serverSnapshot;
+
   const monthlyLimit = monthlyCreateLimit(tier);
   if (monthlyLimit != null) {
     const { count } = await readMonthly();
@@ -92,5 +120,6 @@ export async function recordCreate(tier: Tier): Promise<void> {
 
 /** __DEV__ only — clears local create counters so you can host again. */
 export async function resetCreateQuota(): Promise<void> {
+  serverSnapshot = null;
   await AsyncStorage.multiRemove([FREE_CREATES_KEY, MONTHLY_CREATES_KEY]);
 }

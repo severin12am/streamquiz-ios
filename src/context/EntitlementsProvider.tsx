@@ -20,7 +20,9 @@ import {
   onTierChange,
   type Tier,
 } from '@/lib/purchases';
+import { fetchServerQuota } from '@/api/quota';
 import {
+  applyServerQuota,
   getCreateAllowance,
   recordCreate,
   resetCreateQuota,
@@ -33,9 +35,11 @@ interface EntitlementsContextValue {
   allowance: CreateAllowance | null;
   loading: boolean;
   /** Re-read subscription tier + quota (e.g. after a purchase or returning to Home). */
-  refresh: () => Promise<CreateAllowance>;
+  refresh: (knownTier?: Tier) => Promise<CreateAllowance>;
   /** Record a successful create against the quota, then refresh. */
   noteCreated: () => Promise<void>;
+  /** Apply authoritative quota from a server API response. */
+  applyQuotaSnapshot: (snapshot: CreateAllowance) => Promise<CreateAllowance>;
   /** __DEV__ only — wipe local create counters (free trial + monthly). */
   resetQuotaForDev: () => Promise<CreateAllowance>;
 }
@@ -56,10 +60,27 @@ export function EntitlementsProvider({ children }: { children: React.ReactNode }
     return next;
   }, []);
 
-  const refresh = useCallback(async (): Promise<CreateAllowance> => {
-    const t = await fetchTier();
+  const refresh = useCallback(async (knownTier?: Tier): Promise<CreateAllowance> => {
+    if (!knownTier) {
+      const server = await fetchServerQuota();
+      if (server) {
+        tierRef.current = server.tier;
+        setTier(server.tier);
+        setAllowance(server);
+        return server;
+      }
+    }
+    const t = knownTier ?? (await fetchTier());
     return refreshWith(t);
   }, [refreshWith]);
+
+  const applyQuotaSnapshot = useCallback(
+    async (snapshot: CreateAllowance): Promise<CreateAllowance> => {
+      applyServerQuota(snapshot);
+      return refreshWith(snapshot.tier);
+    },
+    [refreshWith],
+  );
 
   const noteCreated = useCallback(async () => {
     await recordCreate(tierRef.current);
@@ -93,8 +114,8 @@ export function EntitlementsProvider({ children }: { children: React.ReactNode }
   }, [refreshWith]);
 
   const value = useMemo<EntitlementsContextValue>(
-    () => ({ tier, allowance, loading, refresh, noteCreated, resetQuotaForDev }),
-    [tier, allowance, loading, refresh, noteCreated, resetQuotaForDev],
+    () => ({ tier, allowance, loading, refresh, noteCreated, applyQuotaSnapshot, resetQuotaForDev }),
+    [tier, allowance, loading, refresh, noteCreated, applyQuotaSnapshot, resetQuotaForDev],
   );
 
   return (

@@ -79,7 +79,7 @@ export function RootNavigator() {
                     onPress={() => navigation.navigate('Debug')}
                     style={{ paddingHorizontal: 12 }}
                   >
-                    <Text style={{ color: colors.textMuted, fontSize: 12 }}>Logs</Text>
+                    <Text style={{ color: colors.textMuted, fontSize: 12 }}>{t('logs')}</Text>
                   </Pressable>
                 )
               : undefined,

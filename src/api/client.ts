@@ -9,26 +9,36 @@
  */
 import { api } from '@/lib/config';
 import { debugLog } from '@/lib/debug-log';
+import type { CreateAllowance } from '@/lib/createQuota';
 import type { CreateGamePayload, Difficulty, Locale, Question } from '@/lib/types';
+import { quotaRequestHeaders } from '@/api/quotaHeaders';
 
 export { createGame } from '@/api/createGame';
 export type { CreateGameResult } from '@/api/createGame';
 
 async function apiError(res: Response, fallback: string): Promise<never> {
   const body = (await res.json().catch(() => ({}))) as { error?: string };
+  if (res.status === 402) {
+    throw new Error(body.error ?? 'Create quota exceeded.');
+  }
   if (res.status === 429) {
     throw new Error(body.error ?? 'Too many requests. Please wait a moment.');
   }
   throw new Error(body.error ?? fallback);
 }
 
+export interface GenerateQuestionsResult {
+  questions: Question[];
+  quota?: CreateAllowance;
+}
+
 /** Rematch only — host regenerates questions for an existing game row. */
-export async function generateQuestions(payload: CreateGamePayload): Promise<Question[]> {
+export async function generateQuestions(payload: CreateGamePayload): Promise<GenerateQuestionsResult> {
   const url = api('/api/generate-questions');
   debugLog('api', 'generate', 'POST', { url, topic: payload.topic });
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await quotaRequestHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       topic: payload.topic.slice(0, 200),
       difficulty: payload.difficulty,
@@ -45,10 +55,10 @@ export async function generateQuestions(payload: CreateGamePayload): Promise<Que
     await apiError(res, `generate-questions failed (${res.status})`);
   }
 
-  const data = (await res.json()) as { questions?: Question[] };
+  const data = (await res.json()) as { questions?: Question[]; quota?: CreateAllowance };
   if (!data.questions?.length) throw new Error('No questions returned');
   debugLog('api', 'generate', 'ok', { count: data.questions.length });
-  return data.questions;
+  return { questions: data.questions, quota: data.quota };
 }
 
 export async function checkAnswer(params: {

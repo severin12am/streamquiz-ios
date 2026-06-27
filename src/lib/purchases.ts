@@ -144,6 +144,12 @@ export function tierFromCustomerInfo(info: CustomerInfoLike | null | undefined):
   const active = info?.entitlements?.active ?? {};
   if (active[ENTITLEMENT_PREMIUM]) return 'premium';
   if (active[ENTITLEMENT_BASIC]) return 'basic';
+  // RevenueCat entitlement identifiers must be `basic` / `premium`; tolerate casing drift.
+  for (const key of Object.keys(active)) {
+    const id = key.toLowerCase();
+    if (id === ENTITLEMENT_PREMIUM) return 'premium';
+    if (id === ENTITLEMENT_BASIC) return 'basic';
+  }
   return 'free';
 }
 
@@ -252,6 +258,20 @@ export async function purchaseOption(option: PaywallOption): Promise<PurchaseRes
     if (err?.userCancelled) return { ok: false, tier: 'free', cancelled: true };
     debugLog('error', 'billing', 'purchase failed', String(err?.message ?? e));
     return { ok: false, tier: 'free', error: err?.message ?? 'Purchase failed.' };
+  }
+}
+
+/** RevenueCat anonymous / identified app user ID — used for server-side quota. */
+export async function getRevenueCatAppUserId(): Promise<string | null> {
+  if (Platform.OS !== 'ios') return null;
+  await initPurchases();
+  const Purchases = getPurchases();
+  if (!Purchases) return null;
+  try {
+    const id = await Purchases.getAppUserID();
+    return id?.trim() || null;
+  } catch {
+    return null;
   }
 }
 

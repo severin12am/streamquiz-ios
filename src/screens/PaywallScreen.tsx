@@ -65,8 +65,8 @@ export function PaywallScreen({ navigation, route }: Props) {
     options.find((o) => o.tier === tier && o.period === period);
 
   const finishIfEntitled = async (resultTier: Tier) => {
-    await refresh();
-    if (resultTier !== 'free') {
+    const allowance = await refresh(resultTier);
+    if (allowance.tier !== 'free') {
       Alert.alert(t('paywallTitle'), t('purchaseSuccess'));
       navigation.goBack();
     }
@@ -104,7 +104,7 @@ export function PaywallScreen({ navigation, route }: Props) {
       }
       if (res.tier === 'free') {
         Alert.alert(t('restorePurchases'), t('restoreNone'));
-        await refresh();
+        await refresh('free');
         return;
       }
       Alert.alert(t('restorePurchases'), t('restoreSuccess'));

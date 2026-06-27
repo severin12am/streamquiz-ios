@@ -4,8 +4,9 @@
  * Create: POST /api/create-game (server creates row + questions) → navigate Game asHost:true.
  * Join: parse UUID from pasted link → navigate Game asHost:false.
  */
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, Pressable } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import * as Linking from 'expo-linking';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { createGame, parseGameIdFromLink } from '@/api/client';
@@ -31,8 +32,14 @@ const LEGAL_URL = 'https://severin12am.github.io/whosmarter-legal';
 
 export function HomeScreen({ navigation }: Props) {
   const { t, locale, setLocale } = useLocale();
-  const { allowance, refresh, noteCreated, resetQuotaForDev } = useEntitlements();
+  const { allowance, refresh, noteCreated, applyQuotaSnapshot, resetQuotaForDev } = useEntitlements();
   const [joinInput, setJoinInput] = useState('');
+
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
 
   if (!isConfigured()) {
     return (
@@ -62,7 +69,7 @@ export function HomeScreen({ navigation }: Props) {
 
     try {
       const previous = await getPreviousQuestions(params.topic);
-      const { gameId, questions } = await createGame({
+      const { gameId, questions, quota } = await createGame({
         ...params,
         locale,
         previous_questions: previous,
@@ -71,10 +78,14 @@ export function HomeScreen({ navigation }: Props) {
         params.topic,
         questions.map((q) => q.question),
       );
-      await noteCreated();
+      if (quota) {
+        await applyQuotaSnapshot(quota);
+      } else {
+        await noteCreated();
+      }
       navigation.navigate('Game', { gameId, asHost: true });
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to create game');
+      Alert.alert(t('errorTitle'), e instanceof Error ? e.message : t('errorCreateGame'));
     }
   };
 
@@ -88,7 +99,7 @@ export function HomeScreen({ navigation }: Props) {
   const handleJoin = () => {
     const id = parseGameIdFromLink(joinInput);
     if (!id) {
-      Alert.alert('Error', 'Invalid game ID or link');
+      Alert.alert(t('errorTitle'), t('errorInvalidGameId'));
       return;
     }
     playSound('click');

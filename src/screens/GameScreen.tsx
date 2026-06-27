@@ -59,7 +59,7 @@ type Props = {
 export function GameScreen({ gameId, clientId, asHost }: Props) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { t, locale } = useLocale();
-  const { refresh, noteCreated } = useEntitlements();
+  const { refresh, noteCreated, applyQuotaSnapshot } = useEntitlements();
   const {
     game,
     players,
@@ -168,7 +168,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
               }
               style={styles.headerBtn}
             >
-              <Text style={styles.headerBtnMuted}>Logs</Text>
+              <Text style={styles.headerBtnMuted}>{t('logs')}</Text>
             </Pressable>
           </View>
         ) : undefined,
@@ -186,7 +186,15 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
   const rematchInFlight = useRef(false);
   useEffect(() => {
-    if (!game || game.phase !== 'ended' || !me || me.role !== 'host' || rematchInFlight.current) return;
+    // Once the game leaves the ended screen (a rematch started the next game),
+    // clear the in-flight guard so a SUBSEQUENT ended screen can rematch again.
+    // Without this reset the guard stays true after the first rematch and the
+    // host never processes later votes ("waiting for votes" forever).
+    if (!game || game.phase !== 'ended') {
+      rematchInFlight.current = false;
+      return;
+    }
+    if (!me || me.role !== 'host' || rematchInFlight.current) return;
     const guestVotes = players.filter((p) => p.role === 'player' && p.rematch).length;
     if (!me.rematch || guestVotes < 1) return;
 
@@ -206,7 +214,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
         const previous = await getPreviousQuestions(game.topic);
         const merged = mergePreviousQuestions(previous, game.questions);
-        const questions = await generateQuestions({
+        const { questions, quota } = await generateQuestions({
           topic: game.topic,
           difficulty: game.difficulty,
           num_questions: game.num_questions,
@@ -221,18 +229,22 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
           questions.map((q) => q.question),
         );
         await rematch(questions);
-        await noteCreated();
+        if (quota) {
+          await applyQuotaSnapshot(quota);
+        } else {
+          await noteCreated();
+        }
       } catch (e) {
         rematchInFlight.current = false;
         Alert.alert(
-          'Error',
-          e instanceof Error ? e.message : 'Failed to regenerate questions',
+          t('errorTitle'),
+          e instanceof Error ? e.message : t('errorRegenerateQuestions'),
         );
       } finally {
         setRematchLoading(false);
       }
     })();
-  }, [game, me, players, locale, rematch, refresh, noteCreated, navigation]);
+  }, [game, me, players, locale, rematch, refresh, noteCreated, applyQuotaSnapshot, navigation]);
 
   useEffect(() => {
     if (me?.id) void startCamera();
@@ -286,7 +298,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
       if (!player) setGameFull(true);
       else await saveName(name);
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Join failed');
+      Alert.alert(t('errorTitle'), e instanceof Error ? e.message : t('errorJoinFailed'));
     } finally {
       setJoining(false);
     }
