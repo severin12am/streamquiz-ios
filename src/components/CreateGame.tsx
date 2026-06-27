@@ -4,9 +4,10 @@
  * Colors: theme.ts (matches web globals.css lagoon palette).
  */
 import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, Switch } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, Switch, Alert } from 'react-native';
 import type { TranslateFn } from '@/lib/i18n';
 import type { Difficulty, GameMode } from '@/lib/types';
+import { containsProfanity } from '@/lib/profanity';
 import { playSound } from '@/lib/sounds';
 import { KeycapSegSlider } from '@/components/KeycapSegSlider';
 import { KeycapButton } from '@/components/KeycapButton';
@@ -39,12 +40,17 @@ export function CreateGame({ onCreate, t }: Props) {
   const difficulties: Difficulty[] = ['easy', 'medium', 'hard'];
 
   const handleCreate = async () => {
-    if (!topic.trim()) return;
+    const trimmed = topic.trim();
+    if (!trimmed) return;
+    if (containsProfanity(trimmed)) {
+      Alert.alert(t('errorTitle'), t('inappropriateLanguage'));
+      return;
+    }
     playSound('click');
     setLoading(true);
     try {
       await onCreate({
-        topic: topic.trim(),
+        topic: trimmed,
         difficulty,
         num_questions: numQuestions,
         mc_mode: mcMode,

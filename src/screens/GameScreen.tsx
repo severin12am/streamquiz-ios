@@ -30,6 +30,7 @@ import { mergePreviousQuestions, getPreviousQuestions, addQuestionsToHistory } f
 import { getSavedName, saveName } from '@/lib/client-id';
 import { speechLangFor } from '@/lib/i18n';
 import { VOICE_ANSWERS_ENABLED } from '@/lib/features';
+import { containsProfanity } from '@/lib/profanity';
 import { useLocale } from '@/context/LocaleProvider';
 import { useEntitlements } from '@/context/EntitlementsProvider';
 import { useGameState } from '@/hooks/useGameState';
@@ -303,12 +304,18 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     if (prev === 'answering' && cur !== 'answering' && !game?.mc_mode && me && !me.done) {
       if (throttleTimer.current) clearTimeout(throttleTimer.current);
       const finalText = typedText.trim();
-      if (finalText) void updatePlayer(me.id, { done: true, transcript: finalText });
+      if (finalText && !containsProfanity(finalText)) {
+        void updatePlayer(me.id, { done: true, transcript: finalText });
+      }
     }
     if (cur !== 'answering') setTypedText('');
   }, [game?.phase, game?.mc_mode, typedText, me]);
 
   const handleJoin = async (name: string) => {
+    if (containsProfanity(name)) {
+      Alert.alert(t('errorTitle'), t('inappropriateLanguage'));
+      return;
+    }
     setJoining(true);
     setGameFull(false);
     try {
@@ -324,7 +331,18 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
   const handleTypedChange = (text: string) => {
     setTypedText(text);
-    throttledTranscriptUpdate(text);
+    if (!containsProfanity(text)) {
+      throttledTranscriptUpdate(text);
+    }
+  };
+
+  const submitTypedAnswer = () => {
+    const answer = typedText.trim();
+    if (containsProfanity(answer)) {
+      Alert.alert(t('errorTitle'), t('inappropriateLanguage'));
+      return;
+    }
+    void finishAnswer(answer || undefined);
   };
 
   if (loading) {
@@ -417,7 +435,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     onTypedChange: handleTypedChange,
     onToggleTypedMode: VOICE_ANSWERS_ENABLED ? () => setTypedMode((v) => !v) : undefined,
     onSelectMC: (i: number) => void submitMCAnswer(i),
-    onDone: () => void finishAnswer(typedText.trim() || undefined),
+    onDone: submitTypedAnswer,
     onPushToTalkIn: VOICE_ANSWERS_ENABLED ? () => setPttHeld(true) : undefined,
     onPushToTalkOut: VOICE_ANSWERS_ENABLED ? () => setPttHeld(false) : undefined,
     pttHeld,
