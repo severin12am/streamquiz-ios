@@ -39,6 +39,8 @@ interface Props {
   phase: GamePhase;
   mcMode: boolean;
   localMedia: LocalMediaStatus;
+  /** When true, local tile shows "others can't hear you" during voice answering. */
+  localMutedToPeers?: boolean;
   /** Measured top-UI height — defines the top edge of the letterbox band. */
   topInset?: number;
   /** Measured bottom-UI height — defines the bottom edge of the letterbox band. */
@@ -56,6 +58,7 @@ export function CameraStage({
   phase,
   mcMode,
   localMedia,
+  localMutedToPeers = false,
   topInset = 0,
   bottomInset = 0,
   t,
@@ -86,7 +89,7 @@ export function CameraStage({
       cameraBlocked: isLocal ? localMedia.cameraBlocked : false,
       micBlocked: isLocal ? localMedia.micBlocked : false,
       isAnswering,
-      mutedToPeers: isLocal && isAnswering && !mcMode,
+      mutedToPeers: isLocal && localMutedToPeers,
       answeringLabel: t('playerAnswering'),
       mutedLabel: t('answeringMutedShort'),
       fill: true,

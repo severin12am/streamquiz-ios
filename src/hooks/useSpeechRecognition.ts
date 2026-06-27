@@ -23,6 +23,7 @@ interface UseSpeechRecognitionResult {
 export function useSpeechRecognition(
   onUpdate: (text: string) => void,
   lang: string,
+  enabled = true,
 ): UseSpeechRecognitionResult {
   const [transcript, setTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -31,6 +32,8 @@ export function useSpeechRecognition(
   onUpdateRef.current = onUpdate;
 
   useEffect(() => {
+    if (!enabled) return;
+
     Voice.onSpeechResults = (e: SpeechResultsEvent) => {
       const text = e.value?.[0] ?? '';
       setTranscript(text);
@@ -50,9 +53,10 @@ export function useSpeechRecognition(
     return () => {
       void Voice.destroy().then(Voice.removeAllListeners);
     };
-  }, []);
+  }, [enabled]);
 
   const startListening = useCallback(async () => {
+    if (!enabled) return;
     try {
       await Voice.stop();
       setTranscript('');
@@ -63,21 +67,22 @@ export function useSpeechRecognition(
       setIsListening(false);
       setSpeechError(e instanceof Error ? e.message : 'speech_start_failed');
     }
-  }, [lang]);
+  }, [enabled, lang]);
 
   const stopListening = useCallback(async () => {
+    if (!enabled) return;
     try {
       await Voice.stop();
     } catch {
       // ignore
     }
     setIsListening(false);
-  }, []);
+  }, [enabled]);
 
   return {
     transcript,
     isListening,
-    isSupported: true,
+    isSupported: enabled,
     speechError,
     startListening,
     stopListening,

@@ -27,9 +27,11 @@ interface Props {
   timeLeftMs: number;
   typedText: string;
   typedMode: boolean;
+  /** When false, typed-only answering (no voice toggle / speech UI). */
+  voiceAnswersEnabled?: boolean;
   speechUnavailable?: boolean;
   onTypedChange: (text: string) => void;
-  onToggleTypedMode: () => void;
+  onToggleTypedMode?: () => void;
   onSelectMC: (index: number) => void;
   onDone: () => void;
   onPushToTalkIn?: () => void;
@@ -83,6 +85,7 @@ export function QuestionPanel({
   timeLeftMs,
   typedText,
   typedMode,
+  voiceAnswersEnabled = true,
   speechUnavailable,
   onTypedChange,
   onToggleTypedMode,
@@ -178,10 +181,26 @@ export function QuestionPanel({
                     <View style={styles.answeringStatusWait}>
                       <Text style={styles.answeringStatusText}>{t('answeringWaiting')}</Text>
                     </View>
-                  ) : (
+                  ) : !voiceAnswersEnabled ? (
+                    // Typed mode = regular voice chat; no mic warning needed.
+                    null
+                  ) : !typedMode ? (
+                    // Speaking the answer: Apple Speech owns the mic; peers muted.
                     <View style={styles.answeringStatusMuted}>
                       <MaterialIcons name="mic-off" size={22} color={colors.accent} />
                       <Text style={styles.answeringStatusText}>{t('answeringMuted')}</Text>
+                    </View>
+                  ) : pttHeld ? (
+                    // Typing + holding PTT: others can hear you.
+                    <View style={styles.answeringStatusHeard}>
+                      <MaterialIcons name="mic" size={22} color={colors.correct} />
+                      <Text style={styles.answeringStatusText}>{t('answeringHeard')}</Text>
+                    </View>
+                  ) : (
+                    // Typing, PTT released: others can't hear you.
+                    <View style={styles.answeringStatusMuted}>
+                      <MaterialIcons name="edit" size={22} color={colors.accent} />
+                      <Text style={styles.answeringStatusText}>{t('answeringTyping')}</Text>
                     </View>
                   )}
                   {speechUnavailable ? (
@@ -191,16 +210,18 @@ export function QuestionPanel({
                     style={styles.input}
                     value={typedText}
                     onChangeText={onTypedChange}
-                    placeholder={t('speakAnswer')}
+                    placeholder={voiceAnswersEnabled ? t('speakAnswer') : t('typeAnswer')}
                     placeholderTextColor={colors.textMuted}
                     multiline
                     editable={!me?.done}
                   />
                   <View style={styles.voiceActions}>
-                    <KeycapButton variant="secondary" onPress={onToggleTypedMode}>
-                      {typedMode ? t('speakInstead') : t('typeInstead')}
-                    </KeycapButton>
-                    {onPushToTalkIn && onPushToTalkOut ? (
+                    {voiceAnswersEnabled && onToggleTypedMode ? (
+                      <KeycapButton variant="secondary" onPress={onToggleTypedMode}>
+                        {typedMode ? t('speakInstead') : t('typeInstead')}
+                      </KeycapButton>
+                    ) : null}
+                    {voiceAnswersEnabled && onPushToTalkIn && onPushToTalkOut ? (
                       <KeycapButton
                         variant={pttHeld ? 'success' : 'secondary'}
                         onPressIn={onPushToTalkIn}
@@ -397,6 +418,16 @@ const styles = StyleSheet.create({
     padding: 12,
     borderWidth: 1,
     borderColor: colors.accent,
+  },
+  answeringStatusHeard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#dff5ea',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.correct,
   },
   answeringStatusWait: {
     backgroundColor: colors.bgElevated,

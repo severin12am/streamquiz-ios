@@ -29,6 +29,7 @@ import { gameShareUrl, generateQuestions } from '@/api/client';
 import { mergePreviousQuestions, getPreviousQuestions, addQuestionsToHistory } from '@/lib/question-history';
 import { getSavedName, saveName } from '@/lib/client-id';
 import { speechLangFor } from '@/lib/i18n';
+import { VOICE_ANSWERS_ENABLED } from '@/lib/features';
 import { useLocale } from '@/context/LocaleProvider';
 import { useEntitlements } from '@/context/EntitlementsProvider';
 import { useGameState } from '@/hooks/useGameState';
@@ -84,7 +85,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
   const [gameFull, setGameFull] = useState(false);
   const [savedName, setSavedName] = useState('');
   const [typedText, setTypedText] = useState('');
-  const [typedMode, setTypedMode] = useState(false);
+  const [typedMode, setTypedMode] = useState(!VOICE_ANSWERS_ENABLED);
   const [copied, setCopied] = useState(false);
   const [pttHeld, setPttHeld] = useState(false);
   const [micMuted, setMicMuted] = useState(false);
@@ -139,6 +140,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
       }
     },
     speechLangFor(locale),
+    VOICE_ANSWERS_ENABLED,
   );
 
   useEffect(() => {
@@ -250,22 +252,30 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     if (me?.id) void startCamera();
   }, [me?.id, startCamera]);
 
-  // Voice answering uses Apple Speech — keep WebRTC mic off during that phase to avoid iOS audio fights.
-  // A manual mute (MicToggle) always wins so the player can silence their mic at any time.
+  // Mic policy. Manual mute (MicToggle) always wins.
+  //  - MC mode: regular voice chat — mic always open.
+  //  - Typed mode (voice answers removed): also regular voice chat — mic always
+  //    open. No PTT needed; iOS Speech no longer competes for the mic.
+  //  - Legacy voice-answer mode (VOICE_ANSWERS_ENABLED): mic OFF while speaking
+  //    an answer (Apple Speech owns it); PTT to talk otherwise.
   const micPolicy = useCallback(() => {
     if (!game) return false;
     if (micMuted) return false;
     if (game.mc_mode) return true;
-    if (game.phase === 'answering') return false;
+    if (!VOICE_ANSWERS_ENABLED) return true;
+    if (game.phase === 'answering') {
+      if (!typedMode) return false;
+      return pttHeld;
+    }
     return pttHeld;
-  }, [game, pttHeld, micMuted]);
+  }, [game, pttHeld, micMuted, typedMode]);
 
   useEffect(() => {
     setMicEnabled(micPolicy());
   }, [micPolicy, setMicEnabled]);
 
   useEffect(() => {
-    if (!game || game.phase !== 'answering' || !me || me.done || typedMode) {
+    if (!VOICE_ANSWERS_ENABLED || !game || game.phase !== 'answering' || !me || me.done || typedMode) {
       void stopListening();
       return;
     }
@@ -276,19 +286,27 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
   }, [game?.phase, me?.done, typedMode, me, startListening, stopListening]);
 
   useEffect(() => {
+    if (!VOICE_ANSWERS_ENABLED) return;
     if (speechError && game?.phase === 'answering') {
       setTypedMode(true);
     }
   }, [speechError, game?.phase]);
 
+  // Flush the final answer the instant the answering phase ends, so the last
+  // keystrokes inside the throttle window aren't lost before judging. We write
+  // transcript directly (finishAnswer guards on phase === 'answering').
+  const prevPhaseRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (game?.phase !== 'answering' && typedText.trim() && me && !me.done) {
-      void finishAnswer(typedText.trim());
+    const prev = prevPhaseRef.current;
+    const cur = game?.phase;
+    prevPhaseRef.current = cur;
+    if (prev === 'answering' && cur !== 'answering' && !game?.mc_mode && me && !me.done) {
+      if (throttleTimer.current) clearTimeout(throttleTimer.current);
+      const finalText = typedText.trim();
+      if (finalText) void updatePlayer(me.id, { done: true, transcript: finalText });
     }
-    if (game?.phase !== 'answering') {
-      setTypedText('');
-    }
-  }, [game?.phase, typedText, me, finishAnswer]);
+    if (cur !== 'answering') setTypedText('');
+  }, [game?.phase, game?.mc_mode, typedText, me]);
 
   const handleJoin = async (name: string) => {
     setJoining(true);
@@ -376,6 +394,15 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
   const showWinner = game.phase === 'ended' || game.status === 'ended';
 
+  // "Others can't hear you" is a voice-answer-mode concept only. With voice
+  // answers removed, typed mode is regular voice chat (no answering mute).
+  const localMutedToPeers =
+    VOICE_ANSWERS_ENABLED &&
+    game.phase === 'answering' &&
+    !game.mc_mode &&
+    me.done !== true &&
+    !micPolicy();
+
   const sharedPanelProps = {
     game,
     question: currentQuestion,
@@ -384,13 +411,15 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     timeLeftMs,
     typedText,
     typedMode,
-    speechUnavailable: Boolean(speechError) && game.phase === 'answering',
+    voiceAnswersEnabled: VOICE_ANSWERS_ENABLED,
+    speechUnavailable:
+      VOICE_ANSWERS_ENABLED && Boolean(speechError) && game.phase === 'answering',
     onTypedChange: handleTypedChange,
-    onToggleTypedMode: () => setTypedMode((v) => !v),
+    onToggleTypedMode: VOICE_ANSWERS_ENABLED ? () => setTypedMode((v) => !v) : undefined,
     onSelectMC: (i: number) => void submitMCAnswer(i),
     onDone: () => void finishAnswer(typedText.trim() || undefined),
-    onPushToTalkIn: () => setPttHeld(true),
-    onPushToTalkOut: () => setPttHeld(false),
+    onPushToTalkIn: VOICE_ANSWERS_ENABLED ? () => setPttHeld(true) : undefined,
+    onPushToTalkOut: VOICE_ANSWERS_ENABLED ? () => setPttHeld(false) : undefined,
     pttHeld,
     dark: true as const,
     t,
@@ -414,6 +443,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
             cameraBlocked: camerasEnabled && Boolean(cameraError),
             micBlocked: Boolean(cameraError),
           }}
+          localMutedToPeers={localMutedToPeers}
           topInset={topInset}
           bottomInset={bottomInset}
           t={t}

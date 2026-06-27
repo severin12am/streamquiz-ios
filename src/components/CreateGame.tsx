@@ -12,6 +12,7 @@ import { KeycapSegSlider } from '@/components/KeycapSegSlider';
 import { KeycapButton } from '@/components/KeycapButton';
 import { KeycapTextField } from '@/components/KeycapField';
 import { colors } from '@/theme';
+import { VOICE_ANSWERS_ENABLED } from '@/lib/features';
 
 interface Props {
   onCreate: (params: {
@@ -106,7 +107,11 @@ export function CreateGame({ onCreate, t }: Props) {
             <Text style={styles.label}>{t('multipleChoice')}</Text>
             <Switch value={mcMode} onValueChange={setMcMode} trackColor={{ true: colors.accent }} />
           </View>
-          {!mcMode ? <Text style={styles.hint}>{t('voiceAnswers')}</Text> : null}
+          {!mcMode ? (
+            <Text style={styles.hint}>
+              {t(VOICE_ANSWERS_ENABLED ? 'voiceAnswers' : 'typedAnswers')}
+            </Text>
+          ) : null}
 
           <Text style={styles.label}>{t('gameMode')}</Text>
           <Pressable
