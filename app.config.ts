@@ -37,6 +37,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         'WhoSmarter uses your camera so other players can see you during the quiz.',
       NSMicrophoneUsageDescription:
         'WhoSmarter uses your microphone for voice answers and talking to other players.',
+      // iOS 14+ blocks discovery of local-network (LAN) WebRTC "host" ICE
+      // candidates unless the app declares this purpose string. Without it, two
+      // devices on the SAME Wi-Fi can fail to connect directly and fall back to a
+      // TURN relay — which needlessly burns TURN/Metered quota. Declaring it lets
+      // same-network players connect peer-to-peer (no relay) when possible.
+      NSLocalNetworkUsageDescription:
+        'WhoSmarter connects players on the same Wi-Fi directly so video and audio stay fast.',
       NSSpeechRecognitionUsageDescription:
         'WhoSmarter uses speech recognition to transcribe your voice answers.',
       NSPhotoLibraryUsageDescription:

@@ -78,6 +78,95 @@ function videoTierForPeerCount(peers: number): VideoTier {
   return { width: 640, height: 480, frameRate: 20, maxBitrateKbps: 600 };
 }
 
+/**
+ * Enforce one video sender's encoder caps to the given tier.
+ *
+ * IMPORTANT — this does NOT lower our designed quality. It makes the tier we
+ * already chose in `videoTierForPeerCount` ACTUALLY apply to the outgoing stream.
+ * Why this matters for cost: if `setParameters` is never called for a sender,
+ * react-native-webrtc encodes at the camera's own (often much higher) bitrate.
+ * On a direct peer-to-peer link that just wastes a little local bandwidth, but on
+ * a TURN-RELAYED link (the common case on iPhone/cellular/VPN) every one of those
+ * extra bytes is billed against our TURN quota (Metered). Capping every sender to
+ * the intended tier is therefore the single biggest lever for TURN cost on mobile.
+ *
+ * `setParameters` is the canonical, version-robust path. On older RN-WebRTC builds
+ * where it is a no-op we fall back to constraining the source track so the encoder
+ * input is still limited. Both paths are wrapped so a failure is never fatal.
+ */
+async function enforceVideoSenderCaps(sender: RTCRtpSender, tier: VideoTier): Promise<void> {
+  if (sender.track?.kind !== 'video') return;
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) {
+      params.encodings = [{}] as typeof params.encodings;
+    }
+    params.encodings[0].maxBitrate = tier.maxBitrateKbps * 1000;
+    params.encodings[0].maxFramerate = tier.frameRate;
+    await sender.setParameters(params);
+  } catch {
+    // setParameters/encodings unsupported on this build — at least cap the source.
+    try {
+      await sender.track?.applyConstraints({ frameRate: { ideal: tier.frameRate } });
+    } catch {
+      // Nothing else we can do here; capping is best-effort and never fatal.
+    }
+  }
+}
+
+// Minimal shape of the RTCStats entries we read for the relay diagnostic below.
+// (The full getStats() report has many more fields; we only need these.)
+type IceStatReport = {
+  id: string;
+  type: string;
+  nominated?: boolean;
+  selected?: boolean;
+  state?: string;
+  localCandidateId?: string;
+  remoteCandidateId?: string;
+  candidateType?: string; // 'host' | 'srflx' | 'prflx' | 'relay'
+};
+
+/**
+ * PASSIVE diagnostic — logs which ICE candidate pair won once a peer connects, i.e.
+ * whether the media path is `host`/`srflx` (direct) or `relay` (through our TURN
+ * server, which is what consumes Metered/coTURN quota). This is purely
+ * observational: it only writes to debugLog (visible in DebugScreen) and never
+ * touches the connection, so it needs no action from anyone. It exists so we can
+ * later answer "how often is iPhone actually relaying?" without adding work.
+ *
+ * Wrapped in try/catch because getStats()'s exact shape varies across
+ * react-native-webrtc versions; diagnostics must never disturb a live call.
+ */
+async function logSelectedCandidatePair(pc: RTCPeerConnection, peerId: string): Promise<void> {
+  try {
+    const stats = (await pc.getStats()) as unknown as {
+      forEach: (cb: (report: IceStatReport) => void) => void;
+    };
+    const byId = new Map<string, IceStatReport>();
+    let pair: IceStatReport | undefined;
+    stats.forEach((report) => {
+      byId.set(report.id, report);
+      const isActivePair =
+        report.type === 'candidate-pair' &&
+        (report.nominated === true || report.selected === true || report.state === 'succeeded');
+      // Prefer the explicitly nominated pair if more than one looks active.
+      if (isActivePair && (!pair || report.nominated === true)) pair = report;
+    });
+    if (!pair) return;
+    const local = pair.localCandidateId ? byId.get(pair.localCandidateId) : undefined;
+    const remote = pair.remoteCandidateId ? byId.get(pair.remoteCandidateId) : undefined;
+    const relayed = local?.candidateType === 'relay' || remote?.candidateType === 'relay';
+    debugLog('webrtc', 'path', peerId.slice(0, 8), {
+      local: local?.candidateType ?? '?',
+      remote: remote?.candidateType ?? '?',
+      relayed,
+    });
+  } catch {
+    // getStats unavailable / different shape on this build — best-effort only.
+  }
+}
+
 export function useMeshWebRTC(
   gameId: string,
   myId: string | null,
@@ -279,7 +368,24 @@ export function useMeshWebRTC(
         const cs = pc.connectionState;
         debugLog('webrtc', 'peer', cs, { peerId: peerId.slice(0, 8) });
         updateConnected();
-        if (cs === 'connected') setCameraError(null);
+        if (cs === 'connected') {
+          setCameraError(null);
+          // Cap THIS connection's uplink the instant it's up. Critical because a
+          // peer created from an INCOMING offer (handleSignal) never passed through
+          // applyDynamicQuality, so without this its sender would relay at the
+          // camera's native bitrate — a silent TURN-quota leak. Uses the current
+          // peer-count tier; does not change our designed quality (see helper docs).
+          if (camerasEnabledRef.current) {
+            const tier = videoTierForPeerCount(peersRef.current.size + 1);
+            const sender =
+              state.videoSender ??
+              pc.getSenders?.().find((s) => s.track?.kind === 'video') ??
+              null;
+            if (sender) void enforceVideoSenderCaps(sender, tier);
+          }
+          // Record whether we ended up relaying (TURN) for this peer — passive only.
+          void logSelectedCandidatePair(pc, peerId);
+        }
         // 'disconnected' is usually transient — recover with an ICE restart instead of
         // destroying the peer (the reconcile loop will also retry). Only the impolite
         // side initiates the restart to avoid both sides offering at once.
@@ -385,23 +491,15 @@ export function useMeshWebRTC(
       // applyConstraints may not be supported; safe to ignore
     }
 
-    // Apply maxBitrate via sender parameters (best-effort)
+    // Enforce the tier's bitrate/framerate caps on every peer's video sender.
+    // Uses the shared, version-robust helper (setParameters with applyConstraints
+    // fallback) so the caps actually apply across react-native-webrtc builds.
     for (const [, peerState] of peersRef.current) {
-      try {
-        const senders = peerState.pc.getSenders?.();
-        if (!senders) continue;
-        for (const sender of senders) {
-          if (sender.track?.kind !== 'video') continue;
-          const params = sender.getParameters();
-          if (!params.encodings || params.encodings.length === 0) {
-            params.encodings = [{}] as typeof params.encodings;
-          }
-          params.encodings[0].maxBitrate = tier.maxBitrateKbps * 1000;
-          void sender.setParameters(params);
-        }
-      } catch {
-        // Not all RN WebRTC versions support setParameters; safe to skip
-      }
+      const sender =
+        peerState.videoSender ??
+        peerState.pc.getSenders?.().find((s) => s.track?.kind === 'video') ??
+        null;
+      if (sender) void enforceVideoSenderCaps(sender, tier);
     }
   }, []);
 
@@ -498,12 +596,18 @@ export function useMeshWebRTC(
       if (previous && previous !== stream) {
         previous.getTracks().forEach((t) => t.stop());
       }
+
+      // Re-assert the bitrate/framerate caps on the freshly attached video tracks.
+      // getUserMedia constraints alone don't cap the encoder output, so without
+      // this a relayed (TURN) uplink could run uncapped after every (re)capture
+      // (e.g. foreground recovery with force=true). Same tier — no quality change.
+      applyDynamicQuality();
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Camera/mic permission denied';
       debugLog('error', 'media', msg);
       setCameraError(msg);
     }
-  }, [attachLocalTracks, sendOffer]);
+  }, [attachLocalTracks, sendOffer, applyDynamicQuality]);
 
   const setMicEnabled = useCallback((enabled: boolean) => {
     micEnabledRef.current = enabled;
