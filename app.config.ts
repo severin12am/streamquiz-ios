@@ -23,8 +23,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   scheme: 'whosmarter',
   newArchEnabled: false,
   splash: {
-    image: './assets/splash-icon.png',
-    resizeMode: 'contain',
+    image: './assets/splash-pattern.png',
+    resizeMode: 'cover',
     backgroundColor: '#eef3ec',
   },
   ios: {
