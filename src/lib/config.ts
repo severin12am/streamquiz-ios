@@ -16,14 +16,26 @@ export const SUPABASE_ANON_KEY =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
   '';
 
-export const API_BASE_URL = (
-  (extra.apiBaseUrl as string | undefined) ??
-  process.env.EXPO_PUBLIC_API_BASE_URL ??
-  ''
-).replace(/\/$/, '');
+/** Primary web/API host — share links, API calls, Universal Links. */
+export const DEFAULT_API_BASE_URL = 'https://whosmarter.com';
 
 /** Previous Netlify hostname — still accepted for Universal Links / pasted join URLs. */
 export const LEGACY_API_BASE_URL = 'https://streamquiz.netlify.app';
+
+function resolveApiBaseUrl(): string {
+  const candidates = [
+    process.env.EXPO_PUBLIC_API_BASE_URL,
+    extra.apiBaseUrl as string | undefined,
+  ];
+  for (const raw of candidates) {
+    const url = raw?.replace(/\/$/, '');
+    // Never promote the old Netlify hostname — older dev builds bake it into extra.
+    if (url && url !== LEGACY_API_BASE_URL) return url;
+  }
+  return DEFAULT_API_BASE_URL;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 /** RevenueCat public iOS SDK key. Empty → IAP disabled, free trial only. */
 export const REVENUECAT_IOS_KEY = (
