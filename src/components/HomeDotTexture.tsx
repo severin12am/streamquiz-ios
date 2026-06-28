@@ -1,9 +1,18 @@
 /** Tiled teal dot background for home screen — parity with web HomeDotTexture.tsx */
-import React, { useEffect, useState } from 'react';
-import { Dimensions, Image, StyleSheet, View } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import Svg, { Circle, Defs, Pattern, Rect } from 'react-native-svg';
 import { colors } from '@/theme';
 
-const DOT_COUNT = 720;
+const TILE = 220;
+/** Web uses 720; slightly denser tile for finer grain on phone displays. */
+const DOT_COUNT = 960;
+const DOT_RGB = '47,125,119';
+/** Sub-1 px radii read larger on iPhone — scale down vs web CSS px. */
+const RADIUS_SCALE = 0.62;
+const PATTERN_ID = 'homeDotSpeckle';
+
+type DotSpec = { cx: number; cy: number; r: number; opacity: number };
 
 function mulberry32(seed: number) {
   return () => {
@@ -15,40 +24,55 @@ function mulberry32(seed: number) {
   };
 }
 
-function buildDotSvgUri(width: number, height: number): string {
-  const rand = mulberry32((Date.now() ^ (width * height)) >>> 0);
-  const count = Math.round((width * height) / (220 * 220) * DOT_COUNT);
-  const parts: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const x = rand() * width;
-    const y = rand() * height;
+function buildDotTile(seed: number): DotSpec[] {
+  const rand = mulberry32(seed);
+  const dots: DotSpec[] = [];
+  for (let i = 0; i < DOT_COUNT; i += 1) {
+    const cx = rand() * TILE;
+    const cy = rand() * TILE;
     const roll = rand();
-    const r = roll < 0.88 ? 0.22 + rand() * 0.62 : 0.75 + rand() * 0.7;
-    const opacity = 0.08 + rand() * 0.2;
-    parts.push(
-      `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="rgba(47,125,119,${opacity.toFixed(3)})"/>`,
-    );
+    const baseR = roll < 0.88 ? 0.22 + rand() * 0.62 : 0.75 + rand() * 0.7;
+    dots.push({
+      cx,
+      cy,
+      r: baseR * RADIUS_SCALE,
+      opacity: 0.08 + rand() * 0.2,
+    });
   }
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(width)}" height="${Math.ceil(height)}">` +
-    parts.join('') +
-    '</svg>';
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  return dots;
 }
 
 export function HomeDotTexture() {
-  const [uri, setUri] = useState<string | null>(null);
+  const { width, height } = useWindowDimensions();
+  const [dots] = useState(() => buildDotTile((Date.now() ^ (DOT_COUNT * TILE)) >>> 0));
 
-  useEffect(() => {
-    const { width, height } = Dimensions.get('window');
-    setUri(buildDotSvgUri(width, height));
-  }, []);
+  if (width <= 0 || height <= 0) {
+    return <View style={styles.base} pointerEvents="none" accessible={false} />;
+  }
 
   return (
-    <View style={styles.base} pointerEvents="none">
-      {uri ? (
-        <Image source={{ uri }} style={styles.image} resizeMode="cover" />
-      ) : null}
+    <View style={styles.base} pointerEvents="none" accessible={false}>
+      <Svg width={width} height={height} style={StyleSheet.absoluteFillObject}>
+        <Defs>
+          <Pattern
+            id={PATTERN_ID}
+            patternUnits="userSpaceOnUse"
+            width={TILE}
+            height={TILE}
+          >
+            {dots.map((d, i) => (
+              <Circle
+                key={i}
+                cx={d.cx}
+                cy={d.cy}
+                r={d.r}
+                fill={`rgba(${DOT_RGB},${d.opacity.toFixed(3)})`}
+              />
+            ))}
+          </Pattern>
+        </Defs>
+        <Rect x={0} y={0} width={width} height={height} fill={`url(#${PATTERN_ID})`} />
+      </Svg>
     </View>
   );
 }
@@ -57,10 +81,5 @@ const styles = StyleSheet.create({
   base: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.bg,
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-    opacity: 1,
   },
 });
