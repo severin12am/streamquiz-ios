@@ -12,6 +12,8 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -31,6 +33,7 @@ import {
   type Tier,
 } from '@/lib/purchases';
 import { playSound } from '@/lib/sounds';
+import { PRIVACY_POLICY_URL, SUPPORT_URL, TERMS_OF_USE_URL } from '@/lib/legal';
 import type { RootStackParamList } from '@/navigation/types';
 import { colors } from '@/theme';
 
@@ -193,6 +196,20 @@ export function PaywallScreen({ navigation, route }: Props) {
       </KeycapButton>
 
       <Text style={styles.terms}>{t('paywallTerms')}</Text>
+
+      <View style={styles.legalRow}>
+        <Pressable hitSlop={8} onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}>
+          <Text style={styles.legalLink}>{t('privacyPolicy')}</Text>
+        </Pressable>
+        <Text style={styles.legalSep}>·</Text>
+        <Pressable hitSlop={8} onPress={() => void Linking.openURL(TERMS_OF_USE_URL)}>
+          <Text style={styles.legalLink}>{t('termsOfUse')}</Text>
+        </Pressable>
+        <Text style={styles.legalSep}>·</Text>
+        <Pressable hitSlop={8} onPress={() => void Linking.openURL(SUPPORT_URL)}>
+          <Text style={styles.legalLink}>{t('support')}</Text>
+        </Pressable>
+      </View>
     </ScrollView>
   );
 }
@@ -299,5 +316,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 17,
     marginTop: 4,
+  },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  legalLink: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  legalSep: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
 });

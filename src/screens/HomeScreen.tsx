@@ -7,7 +7,6 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, Pressable } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import * as Linking from 'expo-linking';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { createGame, parseGameIdFromLink } from '@/api/client';
 import { isConfigured } from '@/lib/config';
@@ -27,8 +26,6 @@ import type { GameMode } from '@/lib/types';
 import { colors } from '@/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
-
-const LEGAL_URL = 'https://severin12am.github.io/whosmarter-legal';
 
 export function HomeScreen({ navigation }: Props) {
   const { t, locale, setLocale } = useLocale();
@@ -160,14 +157,6 @@ export function HomeScreen({ navigation }: Props) {
           {t('join')}
         </KeycapButton>
       </View>
-
-      <Pressable
-        style={styles.legalLink}
-        hitSlop={8}
-        onPress={() => void Linking.openURL(LEGAL_URL)}
-      >
-        <Text style={styles.legalText}>{t('privacySupport')}</Text>
-      </Pressable>
     </ScrollView>
     </View>
   );
@@ -235,15 +224,5 @@ const styles = StyleSheet.create({
   },
   joinBtn: {
     marginTop: 4,
-  },
-  legalLink: {
-    alignItems: 'center',
-    marginTop: 24,
-    paddingVertical: 8,
-  },
-  legalText: {
-    color: colors.textMuted,
-    fontSize: 13,
-    textDecorationLine: 'underline',
   },
 });

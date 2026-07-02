@@ -50,7 +50,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         'WhoSmarter uses your photo library to save screen recordings of quiz sessions.',
       NSPhotoLibraryAddUsageDescription:
         'WhoSmarter saves screen recordings of quiz sessions to your photo library.',
-      UIBackgroundModes: ['audio'],
     },
   },
   plugins: [
