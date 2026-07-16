@@ -24,9 +24,19 @@ interface Props {
     game_mode: GameMode;
     cameras_enabled: boolean;
     is_public: boolean;
+    answer_seconds: number;
   }) => Promise<void>;
   onBrowseOpenGames?: () => void;
   t: TranslateFn;
+}
+
+const MIN_ANSWER_SECONDS = 5;
+const MAX_ANSWER_SECONDS = 30;
+const DEFAULT_ANSWER_SECONDS = 20;
+
+function clampAnswerSeconds(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return DEFAULT_ANSWER_SECONDS;
+  return Math.min(MAX_ANSWER_SECONDS, Math.max(MIN_ANSWER_SECONDS, Math.round(n)));
 }
 
 export function CreateGame({ onCreate, onBrowseOpenGames, t }: Props) {
@@ -37,6 +47,7 @@ export function CreateGame({ onCreate, onBrowseOpenGames, t }: Props) {
   const [mcMode, setMcMode] = useState(true);
   const [gameMode, setGameMode] = useState<GameMode>('regular');
   const [camerasEnabled, setCamerasEnabled] = useState(true);
+  const [answerSeconds, setAnswerSeconds] = useState(DEFAULT_ANSWER_SECONDS);
   /** Invite only ON → private (is_public false). Spec default. */
   const [inviteOnly, setInviteOnly] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -61,6 +72,8 @@ export function CreateGame({ onCreate, onBrowseOpenGames, t }: Props) {
         game_mode: gameMode,
         cameras_enabled: camerasEnabled,
         is_public: !inviteOnly,
+        // Hardcore has no slider but must still send a valid duration (default 20).
+        answer_seconds: gameMode === 'regular' ? clampAnswerSeconds(answerSeconds) : DEFAULT_ANSWER_SECONDS,
       });
     } finally {
       setLoading(false);
@@ -129,6 +142,18 @@ export function CreateGame({ onCreate, onBrowseOpenGames, t }: Props) {
             <Text style={styles.modeTitle}>{t('firstCorrectMode')}</Text>
             <Text style={styles.modeDesc}>{t('firstCorrectModeDesc')}</Text>
           </Pressable>
+
+          {gameMode === 'regular' ? (
+            <>
+              <Text style={styles.label}>{t('answerTime')}</Text>
+              <KeycapSegSlider
+                min={MIN_ANSWER_SECONDS}
+                max={MAX_ANSWER_SECONDS}
+                value={answerSeconds}
+                onChange={setAnswerSeconds}
+              />
+            </>
+          ) : null}
 
           <View style={styles.switchRow}>
             <Text style={styles.label}>{t('multipleChoice')}</Text>

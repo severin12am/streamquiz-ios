@@ -58,6 +58,11 @@ export function Lobby({
           <Text style={styles.count}>
             {players.length} / {MAX_PLAYERS} {t('playersWord')}
           </Text>
+          {game.game_mode === 'regular' ? (
+            <Text style={styles.count}>
+              {t('lobbyAnswerTime').replace('{n}', String(game.answer_seconds ?? 20))}
+            </Text>
+          ) : null}
           {listedPublicly ? (
             <Text style={styles.publicHint}>{t('lobbyListedPublicly')}</Text>
           ) : null}

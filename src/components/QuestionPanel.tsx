@@ -7,10 +7,9 @@ import { View, Text, TextInput, StyleSheet, ActivityIndicator } from 'react-nati
 import { MaterialIcons } from '@expo/vector-icons';
 import type { Game, Player, Question } from '@/lib/types';
 import {
-  QUESTION_TIME_SECONDS,
   THINK_TIME_SECONDS,
-  VOICE_ANSWER_SECONDS,
   RESULT_TIME_SECONDS,
+  answerSeconds,
 } from '@/hooks/useGameState';
 import { playerColor, playerInitial } from '@/lib/player-colors';
 import { CountdownTimer } from './CountdownTimer';
@@ -47,18 +46,18 @@ interface Props {
   t: TranslateFn;
 }
 
-function totalMsForPhase(phase: Game['phase'], mcMode: boolean): number {
-  switch (phase) {
+function totalMsForPhase(game: Game): number {
+  const answerMs = answerSeconds(game) * 1000;
+  switch (game.phase) {
     case 'thinking':
       return THINK_TIME_SECONDS * 1000;
     case 'question':
-      return QUESTION_TIME_SECONDS * 1000;
     case 'answering':
-      return VOICE_ANSWER_SECONDS * 1000;
+      return answerMs;
     case 'result':
       return RESULT_TIME_SECONDS * 1000;
     default:
-      return mcMode ? QUESTION_TIME_SECONDS * 1000 : VOICE_ANSWER_SECONDS * 1000;
+      return answerMs;
   }
 }
 
@@ -133,7 +132,7 @@ export function QuestionPanel({
                   <CountdownTimer
                     variant="bar"
                     timeLeftMs={timeLeftMs}
-                    totalMs={totalMsForPhase(game.phase, game.mc_mode)}
+                    totalMs={totalMsForPhase(game)}
                   />
                 </View>
               ) : null}

@@ -13,6 +13,11 @@ import {
   RESULT_TIME_SECONDS,
   FIRST_ANSWER_GRACE_SECONDS,
   POLL_INTERVAL_MS,
+  DEFAULT_ANSWER_SECONDS,
+  MIN_ANSWER_SECONDS,
+  MAX_ANSWER_SECONDS,
+  answerSeconds,
+  answerBelongsToRound,
   roundStartPatch,
   afterThinkPatch,
   shrinksOnFirstAnswer,
@@ -30,6 +35,80 @@ describe('timing constants parity', () => {
   it('keeps legacy think/classic constants', () => {
     expect(THINK_TIME_SECONDS).toBe(5);
     expect(FIRST_ANSWER_GRACE_SECONDS).toBe(4);
+  });
+});
+
+describe('answerSeconds', () => {
+  const g = (answer_seconds?: number): Game =>
+    ({ answer_seconds } as unknown as Game);
+
+  it('defaults to 20 when absent or invalid', () => {
+    expect(DEFAULT_ANSWER_SECONDS).toBe(20);
+    expect(answerSeconds(null)).toBe(20);
+    expect(answerSeconds(undefined)).toBe(20);
+    expect(answerSeconds(g(undefined))).toBe(20);
+    expect(answerSeconds(g(NaN))).toBe(20);
+  });
+
+  it('clamps to 5–30', () => {
+    expect(MIN_ANSWER_SECONDS).toBe(5);
+    expect(MAX_ANSWER_SECONDS).toBe(30);
+    expect(answerSeconds(g(3))).toBe(5);
+    expect(answerSeconds(g(99))).toBe(30);
+    expect(answerSeconds(g(12))).toBe(12);
+    expect(answerSeconds(g(12.6))).toBe(13);
+  });
+});
+
+describe('answerBelongsToRound (stale-pick guard)', () => {
+  const player = (over: Partial<Player>): Player =>
+    ({
+      id: '1',
+      game_id: 'g',
+      client_id: 'c',
+      name: 'A',
+      role: 'player',
+      slot: 1,
+      score: 0,
+      mc_index: null,
+      transcript: null,
+      correct: null,
+      done: null,
+      rematch: null,
+      answered_at: null,
+      ...over,
+    } as Player);
+
+  const end = Date.parse('2026-01-01T00:00:20.000Z'); // deadline
+  const deadline = new Date(end).toISOString();
+  const at = (ms: number) => new Date(end + ms).toISOString();
+
+  it('returns false when the player has not answered', () => {
+    expect(answerBelongsToRound(player({}), true, deadline, 20)).toBe(false);
+  });
+
+  it('counts a pick made inside the current window', () => {
+    // answered 15s before the deadline, window is 20s → inside
+    const p = player({ mc_index: 2, answered_at: at(-15000) });
+    expect(answerBelongsToRound(p, true, deadline, 20)).toBe(true);
+  });
+
+  it('rejects a leftover pick from a previous round', () => {
+    // answered 30s before this deadline, window is 20s → outside
+    const p = player({ mc_index: 2, answered_at: at(-30000) });
+    expect(answerBelongsToRound(p, true, deadline, 20)).toBe(false);
+  });
+
+  it('requires answered_at and a deadline', () => {
+    expect(answerBelongsToRound(player({ mc_index: 1 }), true, deadline, 20)).toBe(false);
+    expect(
+      answerBelongsToRound(player({ mc_index: 1, answered_at: at(-5000) }), true, null, 20),
+    ).toBe(false);
+  });
+
+  it('honors voice done with answered_at', () => {
+    const p = player({ done: true, answered_at: at(-5000) });
+    expect(answerBelongsToRound(p, false, deadline, 20)).toBe(true);
   });
 });
 
@@ -150,6 +229,22 @@ describe('round patches', () => {
     const patch = roundStartPatch({ ...game, game_mode: 'think' });
     expect(patch.phase).toBe('thinking');
     expect(patch.phase_deadline).toBeTruthy();
+  });
+
+  it('MC question deadline honors per-game answer_seconds', () => {
+    const before = Date.now();
+    const patch = roundStartPatch({ ...game, game_mode: 'regular', answer_seconds: 8 });
+    const secs = (Date.parse(patch.phase_deadline as string) - before) / 1000;
+    expect(secs).toBeGreaterThan(7);
+    expect(secs).toBeLessThanOrEqual(9);
+  });
+
+  it('voice deadline defaults to 20s when answer_seconds absent', () => {
+    const before = Date.now();
+    const patch = roundStartPatch({ ...game, mc_mode: false, game_mode: 'regular' });
+    const secs = (Date.parse(patch.phase_deadline as string) - before) / 1000;
+    expect(secs).toBeGreaterThan(18);
+    expect(secs).toBeLessThanOrEqual(21);
   });
 
   it('after think goes to question for MC', () => {

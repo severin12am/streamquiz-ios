@@ -41,14 +41,49 @@ import type { Game, GameMode, Player, Question } from '@/lib/types';
 
 // MARK: - Parity timing constants (must match web hooks/useGameState.ts)
 
-export const QUESTION_TIME_SECONDS = 20;
-export const VOICE_ANSWER_SECONDS = 20;
+// Answer window is per-game (games.answer_seconds, 5–30, default 20). These
+// legacy constants remain the fallback default only — NEVER hardcode them for
+// answer-phase deadlines; always go through answerSeconds(game).
+export const DEFAULT_ANSWER_SECONDS = 20;
+export const MIN_ANSWER_SECONDS = 5;
+export const MAX_ANSWER_SECONDS = 30;
+export const QUESTION_TIME_SECONDS = DEFAULT_ANSWER_SECONDS;
+export const VOICE_ANSWER_SECONDS = DEFAULT_ANSWER_SECONDS;
 export const RESULT_TIME_SECONDS = 5;
 export const CHECK_TIMEOUT_SECONDS = 15;
 
 // Legacy only — used by 'think' / 'classic' rows, NOT by regular/hardcore.
 export const THINK_TIME_SECONDS = 5;
 export const FIRST_ANSWER_GRACE_SECONDS = 4;
+
+/** Host-configured answer window (5–30s), falling back to 20 for legacy rows. */
+export function answerSeconds(game: Game | null | undefined): number {
+  const n = game?.answer_seconds;
+  if (typeof n === 'number' && Number.isFinite(n)) {
+    return Math.min(MAX_ANSWER_SECONDS, Math.max(MIN_ANSWER_SECONDS, Math.round(n)));
+  }
+  return DEFAULT_ANSWER_SECONDS;
+}
+
+/**
+ * True when the player's commit belongs to the CURRENT answer window.
+ * Leftover picks from the previous round (old mc_index/done/answered_at that
+ * haven't been reset yet) must NOT count, or a fresh round would instantly
+ * "resolve itself". 2s slack each side absorbs clock skew / shrink races.
+ */
+export function answerBelongsToRound(
+  p: Player,
+  mcMode: boolean,
+  deadline: string | null,
+  phaseDurationSec: number,
+): boolean {
+  if (!hasAnswered(p, mcMode)) return false;
+  if (!deadline || !p.answered_at) return false;
+  const end = new Date(deadline).getTime();
+  const start = end - phaseDurationSec * 1000;
+  const at = new Date(p.answered_at).getTime();
+  return at >= start - 2000 && at <= end + 2000;
+}
 
 export const POLL_INTERVAL_MS = 2500;
 export const TICK_INTERVAL_MS = 100;
@@ -85,7 +120,7 @@ export function roundStartPatch(game: Game): Partial<Game> {
   if (sanitized.mc_mode) {
     return {
       phase: 'question',
-      phase_deadline: deadlineIn(QUESTION_TIME_SECONDS),
+      phase_deadline: deadlineIn(answerSeconds(sanitized)),
       answer_correct: null,
       last_points: null,
     };
@@ -93,7 +128,7 @@ export function roundStartPatch(game: Game): Partial<Game> {
 
   return {
     phase: 'answering',
-    phase_deadline: deadlineIn(VOICE_ANSWER_SECONDS),
+    phase_deadline: deadlineIn(answerSeconds(sanitized)),
     answer_correct: null,
     last_points: null,
   };
@@ -108,12 +143,12 @@ export function afterThinkPatch(game: Game): Partial<Game> {
   if (game.mc_mode) {
     return {
       phase: 'question',
-      phase_deadline: deadlineIn(QUESTION_TIME_SECONDS),
+      phase_deadline: deadlineIn(answerSeconds(game)),
     };
   }
   return {
     phase: 'answering',
-    phase_deadline: deadlineIn(VOICE_ANSWER_SECONDS),
+    phase_deadline: deadlineIn(answerSeconds(game)),
   };
 }
 
@@ -156,8 +191,8 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
   const actedDeadline = useRef<string | null>(null);
   const earlyDoneRef = useRef<string | null>(null);
   const shrunkDeadline = useRef<string | null>(null);
-  // Round key (`index:phase`) for which we have observed a roster with at least
-  // one player NOT yet answered. This proves the per-round reset has landed and
+  // The phase_deadline for which we have observed a roster with NO live answers
+  // (per answerBelongsToRound). This proves the per-round reset has landed and
   // the picks/done flags we now see belong to THIS round — not stale leftovers
   // from the previous question. Without it, a fresh round can be resolved (or
   // its timer shrunk) instantly off the previous round's answers, which looks
@@ -299,7 +334,11 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
         // round's picks briefly looked like answers for the new question (the
         // "question answered itself" bug). The deadline path passes no opts and
         // always resolves.
-        if (opts?.requireAllAnswered && !list.every((p) => hasAnswered(p, g.mc_mode))) {
+        const mcSecs = answerSeconds(g);
+        const isLive = (p: Player) =>
+          answerBelongsToRound(p, g.mc_mode, g.phase_deadline, mcSecs);
+
+        if (opts?.requireAllAnswered && !list.every(isLive)) {
           debugLog('game', 'resolve', 'abort early MC: roster not all answered', {
             qIndex: g.current_question_index,
             picks: list.map((p) => p.mc_index ?? null),
@@ -310,7 +349,10 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
         const question = g.questions[g.current_question_index];
         const correctAnswer = question?.correct_answer ?? '';
 
+        // Only picks committed within the current answer window count for
+        // scoring — a leftover pick from the previous round must not score.
         const correctOf = (p: Player): boolean => {
+          if (!isLive(p)) return false;
           const chosen =
             p.mc_index !== null && p.mc_index !== undefined
               ? getMcOptionText(question, p.mc_index)
@@ -472,21 +514,23 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
         if (!g) return;
         const roster = playersRef.current;
 
-        // Roster-freshness gate: mark this round "fresh" the moment we see a
-        // roster where someone has NOT answered. At round start the local roster
-        // can still carry the previous round's picks (the reset write hasn't
-        // propagated yet); until we observe a genuinely un-answered roster for
-        // THIS round we must not shrink the timer or resolve early.
+        // Only count commits that belong to the CURRENT answer window (by
+        // answered_at vs phase_deadline). This is the stale-pick guard: leftover
+        // picks from the previous round (reset write not landed yet) must not
+        // count toward shrink / early-advance / resolve.
+        const phaseSecs = answerSeconds(g);
+        const liveAnswer = (p: Player) =>
+          answerBelongsToRound(p, g.mc_mode, g.phase_deadline, phaseSecs);
+
+        // Round-ready gate: a new deadline becomes eligible for early-advance
+        // only after we have observed the roster with NO live answers for that
+        // deadline. Keyed on the deadline itself (parity with web).
         const inAnswerablePhase = g.phase === 'question' || g.phase === 'answering';
-        const roundKey = `${g.current_question_index}:${g.phase}`;
-        if (
-          inAnswerablePhase &&
-          roster.length > 0 &&
-          roster.some((p) => !hasAnswered(p, g.mc_mode))
-        ) {
-          freshRosterRound.current = roundKey;
+        if (inAnswerablePhase && g.phase_deadline && !roster.some(liveAnswer)) {
+          freshRosterRound.current = g.phase_deadline;
         }
-        const rosterFresh = freshRosterRound.current === roundKey;
+        const roundReady =
+          inAnswerablePhase && freshRosterRound.current === g.phase_deadline;
 
         // First-answer race (LEGACY think/classic only): once ANY player answers,
         // cut remaining time to the grace window for everyone else. regular and
@@ -495,10 +539,10 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
         if (
           inAnswerablePhase &&
           shrinksOnFirstAnswer(g.game_mode) &&
-          rosterFresh &&
+          roundReady &&
           g.phase_deadline &&
           shrunkDeadline.current !== g.phase_deadline &&
-          roster.some((p) => hasAnswered(p, g.mc_mode)) &&
+          roster.some(liveAnswer) &&
           msUntil(g.phase_deadline) > (FIRST_ANSWER_GRACE_SECONDS + 0.4) * 1000
         ) {
           shrunkDeadline.current = g.phase_deadline;
@@ -509,10 +553,10 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
         }
 
         // Early advance: everyone answered before the timer ends. Requires a
-        // confirmed-fresh roster (see above) plus the per-deadline guard so a
-        // stale roster from the previous round can't trigger it.
+        // confirmed round-ready deadline (see above) so a stale roster from the
+        // previous round can't trigger it.
         const everyoneAnswered =
-          rosterFresh && roster.length > 0 && roster.every((p) => hasAnswered(p, g.mc_mode));
+          roundReady && roster.length > 0 && roster.every(liveAnswer);
 
         if (g.phase === 'question' && everyoneAnswered && earlyDoneRef.current !== g.phase_deadline) {
           earlyDoneRef.current = g.phase_deadline;
@@ -524,9 +568,15 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
         }
         if (g.phase === 'answering' && everyoneAnswered && earlyDoneRef.current !== g.phase_deadline) {
           earlyDoneRef.current = g.phase_deadline;
-          // Confirm against the authoritative DB roster before ending the round.
+          // Confirm against the authoritative DB roster before ending the round,
+          // counting only commits within the current answer window.
           const fresh = await fetchPlayers(g.id);
-          if (!fresh.every((p) => hasAnswered(p, false))) {
+          const answeringSecs = answerSeconds(g);
+          if (
+            !fresh.every((p) =>
+              answerBelongsToRound(p, false, g.phase_deadline, answeringSecs),
+            )
+          ) {
             earlyDoneRef.current = null;
             return;
           }

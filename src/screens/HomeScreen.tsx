@@ -54,6 +54,7 @@ export function HomeScreen({ navigation }: Props) {
     game_mode: GameMode;
     cameras_enabled: boolean;
     is_public: boolean;
+    answer_seconds: number;
   }) => {
     // Joining is always free; creating is gated. Check before spending any AI
     // tokens or inserting a row.

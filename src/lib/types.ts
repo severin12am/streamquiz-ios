@@ -69,6 +69,8 @@ export interface Game {
   last_points: number | null;
   /** Listed in Browse while waiting; cleared forever on host Start (Rule R1). */
   is_public?: boolean;
+  /** Seconds to answer each question (5–30). Default 20. Absent on pre-v17 rows. */
+  answer_seconds?: number;
 }
 
 export type WebRTCSignalType = 'offer' | 'answer' | 'ice-candidate';
@@ -91,6 +93,8 @@ export interface CreateGamePayload {
   previous_questions?: string[];
   /** Default false (Invite only ON). Send true only when Invite only is off. */
   is_public?: boolean;
+  /** Seconds to answer (5–30). Defaults to 20 on server if omitted. */
+  answer_seconds?: number;
 }
 
 /** Directory row from GET /api/public-games — never includes questions/answers. */

@@ -21,6 +21,12 @@ export interface CreateGameResult {
   quota?: CreateAllowance;
 }
 
+/** Clamp to the server's accepted range (5–30); default 20 when absent/invalid. */
+function clampAnswerSeconds(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return 20;
+  return Math.min(30, Math.max(5, Math.round(n)));
+}
+
 async function apiError(res: Response, fallback: string): Promise<never> {
   const body = (await res.json().catch(() => ({}))) as { error?: string };
   if (res.status === 402) {
@@ -54,6 +60,7 @@ export async function createGame(
       locale: payload.locale,
       previous_questions: payload.previous_questions,
       is_public: payload.is_public === true,
+      answer_seconds: clampAnswerSeconds(payload.answer_seconds),
     }),
   });
 

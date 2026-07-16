@@ -113,6 +113,8 @@ const en = {
   adjust: 'More',
   hideAdjust: 'Hide',
   settings: 'Settings',
+  answerTime: 'Answer time (seconds)',
+  lobbyAnswerTime: 'Answer time: {n}s',
   inviteOnlyTitle: 'Invite only',
   inviteOnlyHintOn: 'Only people with your link can join.',
   inviteOnlyHintOff: 'Listed in Browse open games while waiting.',
@@ -292,6 +294,8 @@ const ru: typeof en = {
   recordingIosOnly: 'Запись экрана доступна на iOS',
   adjust: 'Настроить',
   hideAdjust: 'Скрыть настройки',
+  answerTime: 'Время на ответ (сек)',
+  lobbyAnswerTime: 'Время на ответ: {n}с',
   settings: 'Настройки',
   paywallTitle: 'Разблокировать создание викторин',
   paywallSubtitle:
@@ -439,6 +443,8 @@ const es: typeof en = {
   recordingIosOnly: 'La grabación de pantalla está disponible en iOS',
   adjust: 'Ajustar',
   hideAdjust: 'Ocultar ajustes',
+  answerTime: 'Tiempo de respuesta (segundos)',
+  lobbyAnswerTime: 'Tiempo de respuesta: {n}s',
   settings: 'Ajustes',
   paywallTitle: 'Desbloquear creación de quizzes',
   paywallSubtitle:
@@ -586,6 +592,8 @@ const fr: typeof en = {
   recordingIosOnly: 'L\'enregistrement d\'écran est disponible sur iOS',
   adjust: 'Ajuster',
   hideAdjust: 'Masquer les réglages',
+  answerTime: 'Temps de réponse (secondes)',
+  lobbyAnswerTime: 'Temps de réponse : {n}s',
   settings: 'Réglages',
   paywallTitle: 'Débloquer la création de quiz',
   paywallSubtitle:
@@ -733,6 +741,8 @@ const de: typeof en = {
   recordingIosOnly: 'Bildschirmaufnahme ist auf iOS verfügbar',
   adjust: 'Anpassen',
   hideAdjust: 'Einstellungen ausblenden',
+  answerTime: 'Antwortzeit (Sekunden)',
+  lobbyAnswerTime: 'Antwortzeit: {n}s',
   settings: 'Einstellungen',
   paywallTitle: 'Quiz-Erstellung freischalten',
   paywallSubtitle:
@@ -880,6 +890,8 @@ const ja: typeof en = {
   recordingIosOnly: '画面録画はiOSで利用できます',
   adjust: '調整',
   hideAdjust: '設定を隠す',
+  answerTime: '回答時間（秒）',
+  lobbyAnswerTime: '回答時間: {n}秒',
   settings: '設定',
   paywallTitle: 'クイズ作成を解除',
   paywallSubtitle:
@@ -1027,6 +1039,8 @@ const ar: typeof en = {
   recordingIosOnly: 'تسجيل الشاشة متاح على iOS',
   adjust: 'ضبط',
   hideAdjust: 'إخفاء الإعدادات',
+  answerTime: 'وقت الإجابة (ثوانٍ)',
+  lobbyAnswerTime: 'وقت الإجابة: {n} ث',
   settings: 'الإعدادات',
   paywallTitle: 'فتح إنشاء الاختبارات',
   paywallSubtitle:
