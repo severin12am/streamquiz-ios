@@ -1,6 +1,6 @@
 /** Live multiplayer leaderboard — parity with web ScoreBoard.tsx */
 import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, View, Text, StyleSheet } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, Pressable } from 'react-native';
 import type { GamePhase, Player } from '@/lib/types';
 import { playerColor, playerInitial } from '@/lib/player-colors';
 import { colors } from '@/theme';
@@ -10,9 +10,23 @@ interface Props {
   meId: string;
   phase?: GamePhase;
   label?: string;
+  /** Host-only: show Remove on guest chips. */
+  isHost?: boolean;
+  onRemovePlayer?: (player: Player) => void;
+  removingPlayerId?: string | null;
+  removeLabel?: string;
 }
 
-export function ScoreBoard({ players, meId, phase, label }: Props) {
+export function ScoreBoard({
+  players,
+  meId,
+  phase,
+  label,
+  isHost,
+  onRemovePlayer,
+  removingPlayerId,
+  removeLabel,
+}: Props) {
   const prevScores = useRef<Record<string, number>>({});
   const [flashing, setFlashing] = useState<Record<string, boolean>>({});
 
@@ -45,6 +59,11 @@ export function ScoreBoard({ players, meId, phase, label }: Props) {
           const flash = flashing[p.id];
           const colour = playerColor(p.slot);
           const answered = hasAnswered(p);
+          const canRemove =
+            Boolean(isHost) &&
+            Boolean(onRemovePlayer) &&
+            p.role !== 'host' &&
+            p.id !== meId;
           return (
             <View key={p.id} style={[styles.chip, isMe && styles.chipMe]}>
               <View style={[styles.chipInner, flash && styles.chipFlash]}>
@@ -65,6 +84,17 @@ export function ScoreBoard({ players, meId, phase, label }: Props) {
                   />
                 ) : null}
                 <Text style={[styles.score, flash && styles.scoreFlash]}>{p.score}</Text>
+                {canRemove ? (
+                  <Pressable
+                    onPress={() => onRemovePlayer?.(p)}
+                    disabled={removingPlayerId === p.id}
+                    hitSlop={6}
+                  >
+                    <Text style={styles.remove}>
+                      {removingPlayerId === p.id ? '…' : (removeLabel ?? 'Remove')}
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
             </View>
           );
@@ -137,4 +167,10 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   scoreFlash: { color: colors.gold },
+  remove: {
+    color: colors.wrong,
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 2,
+  },
 });

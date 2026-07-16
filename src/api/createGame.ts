@@ -53,6 +53,7 @@ export async function createGame(
       cameras_enabled: payload.cameras_enabled,
       locale: payload.locale,
       previous_questions: payload.previous_questions,
+      is_public: payload.is_public === true,
     }),
   });
 

@@ -53,6 +53,7 @@ export function HomeScreen({ navigation }: Props) {
     mc_mode: boolean;
     game_mode: GameMode;
     cameras_enabled: boolean;
+    is_public: boolean;
   }) => {
     // Joining is always free; creating is gated. Check before spending any AI
     // tokens or inserting a row.
@@ -143,7 +144,11 @@ export function HomeScreen({ navigation }: Props) {
         </Pressable>
       ) : null}
 
-      <CreateGame onCreate={handleCreate} t={t} />
+      <CreateGame
+        onCreate={handleCreate}
+        onBrowseOpenGames={() => navigation.navigate('PublicGames')}
+        t={t}
+      />
 
       <View style={styles.joinCard}>
         <Text style={styles.joinTitle}>{t('joinById')}</Text>

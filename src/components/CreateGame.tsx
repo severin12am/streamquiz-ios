@@ -1,6 +1,6 @@
 /**
- * Host create form — simplified home: topic + Create, then Adjust for settings.
- * Defaults: medium, MC on, cameras on, "every answer counts" (`regular` in DB).
+ * Host create form — topic + Create, then More for settings.
+ * Defaults: medium, MC on, cameras on, Invite only ON (private), regular mode.
  * Colors: theme.ts (matches web globals.css lagoon palette).
  */
 import React, { useState } from 'react';
@@ -23,11 +23,13 @@ interface Props {
     mc_mode: boolean;
     game_mode: GameMode;
     cameras_enabled: boolean;
+    is_public: boolean;
   }) => Promise<void>;
+  onBrowseOpenGames?: () => void;
   t: TranslateFn;
 }
 
-export function CreateGame({ onCreate, t }: Props) {
+export function CreateGame({ onCreate, onBrowseOpenGames, t }: Props) {
   const [topic, setTopic] = useState('');
   const [showAdjust, setShowAdjust] = useState(false);
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
@@ -35,6 +37,8 @@ export function CreateGame({ onCreate, t }: Props) {
   const [mcMode, setMcMode] = useState(true);
   const [gameMode, setGameMode] = useState<GameMode>('regular');
   const [camerasEnabled, setCamerasEnabled] = useState(true);
+  /** Invite only ON → private (is_public false). Spec default. */
+  const [inviteOnly, setInviteOnly] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const difficulties: Difficulty[] = ['easy', 'medium', 'hard'];
@@ -56,6 +60,7 @@ export function CreateGame({ onCreate, t }: Props) {
         mc_mode: mcMode,
         game_mode: gameMode,
         cameras_enabled: camerasEnabled,
+        is_public: !inviteOnly,
       });
     } finally {
       setLoading(false);
@@ -109,16 +114,6 @@ export function CreateGame({ onCreate, t }: Props) {
           <Text style={styles.label}>{t('numQuestions')}</Text>
           <KeycapSegSlider value={numQuestions} onChange={setNumQuestions} />
 
-          <View style={styles.switchRow}>
-            <Text style={styles.label}>{t('multipleChoice')}</Text>
-            <Switch value={mcMode} onValueChange={setMcMode} trackColor={{ true: colors.accent }} />
-          </View>
-          {!mcMode ? (
-            <Text style={styles.hint}>
-              {t(VOICE_ANSWERS_ENABLED ? 'voiceAnswers' : 'typedAnswers')}
-            </Text>
-          ) : null}
-
           <Text style={styles.label}>{t('gameMode')}</Text>
           <Pressable
             style={[styles.modeCard, gameMode === 'regular' && styles.modeCardActive]}
@@ -136,6 +131,16 @@ export function CreateGame({ onCreate, t }: Props) {
           </Pressable>
 
           <View style={styles.switchRow}>
+            <Text style={styles.label}>{t('multipleChoice')}</Text>
+            <Switch value={mcMode} onValueChange={setMcMode} trackColor={{ true: colors.accent }} />
+          </View>
+          {!mcMode ? (
+            <Text style={styles.hint}>
+              {t(VOICE_ANSWERS_ENABLED ? 'voiceAnswers' : 'typedAnswers')}
+            </Text>
+          ) : null}
+
+          <View style={styles.switchRow}>
             <Text style={styles.label}>{camerasEnabled ? t('camerasOn') : t('camerasOff')}</Text>
             <Switch
               value={camerasEnabled}
@@ -143,6 +148,31 @@ export function CreateGame({ onCreate, t }: Props) {
               trackColor={{ true: colors.accent }}
             />
           </View>
+
+          <View style={styles.switchRow}>
+            <Text style={styles.label}>{t('inviteOnlyTitle')}</Text>
+            <Switch
+              value={inviteOnly}
+              onValueChange={setInviteOnly}
+              trackColor={{ true: colors.accent }}
+            />
+          </View>
+          <Text style={styles.hint}>
+            {inviteOnly ? t('inviteOnlyHintOn') : t('inviteOnlyHintOff')}
+          </Text>
+
+          {onBrowseOpenGames ? (
+            <Pressable
+              style={styles.browseRow}
+              onPress={() => {
+                playSound('click');
+                onBrowseOpenGames();
+              }}
+            >
+              <Text style={styles.browseTitle}>{t('browseOpenGames')}</Text>
+              <Text style={styles.browseHint}>{t('browseOpenGamesHint')}</Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -167,15 +197,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  input: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
-    padding: 14,
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.border,
-    fontSize: 16,
-  },
   row: { flexDirection: 'row', gap: 8 },
   diffBtn: { flex: 1 },
   diffFace: { paddingVertical: 11, paddingHorizontal: 8 },
@@ -193,7 +214,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  disabled: { opacity: 0.5 },
   modeCard: {
     padding: 12,
     borderRadius: 12,
@@ -208,4 +228,15 @@ const styles = StyleSheet.create({
   },
   modeTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
   modeDesc: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
+  browseRow: {
+    marginTop: 4,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 4,
+  },
+  browseTitle: { color: colors.accent, fontSize: 15, fontWeight: '700' },
+  browseHint: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
 });

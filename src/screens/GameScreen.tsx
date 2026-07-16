@@ -25,7 +25,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Clipboard from 'expo-clipboard';
-import { gameShareUrl, generateQuestions } from '@/api/client';
+import { gameShareUrl, generateQuestions, kickPlayer } from '@/api/client';
 import { mergePreviousQuestions, getPreviousQuestions, addQuestionsToHistory } from '@/lib/question-history';
 import { getSavedName, saveName } from '@/lib/client-id';
 import { speechLangFor } from '@/lib/i18n';
@@ -38,14 +38,17 @@ import { useGameSounds } from '@/hooks/useGameSounds';
 import { useMeshWebRTC } from '@/hooks/useMeshWebRTC';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { playSound } from '@/lib/sounds';
-import { updatePlayer } from '@/lib/supabase';
+import { BannedFromGameError, updatePlayer } from '@/lib/supabase';
 import { SoundToggle } from '@/components/SoundToggle';
 import { MicToggle } from '@/components/MicToggle';
 import { JoinScreen } from '@/components/JoinScreen';
 import { Lobby } from '@/components/Lobby';
+import { ScoreBoard } from '@/components/ScoreBoard';
 import { CameraStage } from '@/components/CameraStage';
 import { QuestionPanel } from '@/components/QuestionPanel';
 import { WinnerScreen } from '@/components/WinnerScreen';
+import { KeycapButton } from '@/components/KeycapButton';
+import type { Player } from '@/lib/types';
 import type { RootStackParamList } from '@/navigation/types';
 import { colors } from '@/theme';
 
@@ -56,9 +59,11 @@ type Props = {
   gameId: string;
   clientId: string;
   asHost: boolean;
+  /** Browse → Join: auto-claim a seat with the saved name when possible. */
+  autoJoin?: boolean;
 };
 
-export function GameScreen({ gameId, clientId, asHost }: Props) {
+export function GameScreen({ gameId, clientId, asHost, autoJoin }: Props) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { t, locale } = useLocale();
   const { refresh, noteCreated, applyQuotaSnapshot } = useEntitlements();
@@ -84,6 +89,8 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
   const [joining, setJoining] = useState(false);
   const [gameFull, setGameFull] = useState(false);
+  const [joinBanned, setJoinBanned] = useState(false);
+  const [removed, setRemoved] = useState(false);
   const [savedName, setSavedName] = useState('');
   const [typedText, setTypedText] = useState('');
   const [typedMode, setTypedMode] = useState(!VOICE_ANSWERS_ENABLED);
@@ -91,6 +98,7 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
   const [pttHeld, setPttHeld] = useState(false);
   const [micMuted, setMicMuted] = useState(false);
   const [rematchLoading, setRematchLoading] = useState(false);
+  const [removingPlayerId, setRemovingPlayerId] = useState<string | null>(null);
   // Measured floating-UI band heights — define the middle band for the
   // 2-player letterbox camera layout (mode 4).
   const [topInset, setTopInset] = useState(0);
@@ -98,6 +106,9 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
   const lastTranscriptWrite = useRef(0);
   const transcriptPending = useRef<string | null>(null);
+  const hadSeatRef = useRef(false);
+  const rejoinAfterKickRef = useRef(false);
+  const autoJoinAttemptedRef = useRef(false);
   const throttleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const camerasEnabled = game?.cameras_enabled ?? false;
@@ -147,6 +158,36 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
   useEffect(() => {
     void getSavedName().then(setSavedName);
   }, []);
+
+  useEffect(() => {
+    if (me) hadSeatRef.current = true;
+  }, [me]);
+
+  // Spec: seat disappeared → one rejoin attempt; ban → removed screen.
+  useEffect(() => {
+    if (loading || error || !game || me || removed || joinBanned) return;
+    if (!hadSeatRef.current || rejoinAfterKickRef.current) return;
+    rejoinAfterKickRef.current = true;
+
+    void (async () => {
+      const name = (await getSavedName()) || 'Player';
+      try {
+        const player = await join(name, false);
+        // Seat gone (banned or full) → removed. A successful reattach updates `me`.
+        if (!player) {
+          setRemoved(true);
+        }
+      } catch (e) {
+        if (e instanceof BannedFromGameError) {
+          setRemoved(true);
+          return;
+        }
+        // Transient/network error: allow another attempt and fall back to the
+        // manual join screen rather than falsely claiming removal.
+        rejoinAfterKickRef.current = false;
+      }
+    })();
+  }, [loading, error, game, me, removed, joinBanned, join]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -318,16 +359,71 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     }
     setJoining(true);
     setGameFull(false);
+    setJoinBanned(false);
     try {
       const player = await join(name, asHost);
       if (!player) setGameFull(true);
       else await saveName(name);
     } catch (e) {
+      if (e instanceof BannedFromGameError) {
+        setJoinBanned(true);
+        return;
+      }
       Alert.alert(t('errorTitle'), e instanceof Error ? e.message : t('errorJoinFailed'));
     } finally {
       setJoining(false);
     }
   };
+
+  const handleRemovePlayer = (player: Player) => {
+    if (!me || me.role !== 'host' || player.role === 'host') return;
+    Alert.alert(
+      t('lobbyRemovePlayer'),
+      t('lobbyRemoveConfirm').replace('{name}', player.name),
+      [
+        { text: t('roomsBack'), style: 'cancel' },
+        {
+          text: t('lobbyRemovePlayer'),
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setRemovingPlayerId(player.id);
+              try {
+                await kickPlayer({
+                  gameId,
+                  targetPlayerId: player.id,
+                  hostClientId: clientId,
+                });
+              } catch {
+                Alert.alert(t('errorTitle'), t('lobbyRemoveError'));
+              } finally {
+                setRemovingPlayerId(null);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
+  // Browse → Join: claim a seat immediately when a saved name exists.
+  useEffect(() => {
+    if (!autoJoin || autoJoinAttemptedRef.current) return;
+    if (loading || error || !game || me || removed || joinBanned || joining) return;
+    if (!savedName.trim()) return;
+    autoJoinAttemptedRef.current = true;
+    void handleJoin(savedName.trim());
+  }, [
+    autoJoin,
+    loading,
+    error,
+    game,
+    me,
+    removed,
+    joinBanned,
+    joining,
+    savedName,
+  ]);
 
   const handleTypedChange = (text: string) => {
     setTypedText(text);
@@ -362,7 +458,29 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
     );
   }
 
+  if (removed) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.removedTitle}>{t('gameRemovedTitle')}</Text>
+        <Text style={styles.removedBody}>{t('gameRemovedBody')}</Text>
+        <KeycapButton variant="primary" onPress={() => navigation.navigate('Home')}>
+          {t('gameRemovedHome')}
+        </KeycapButton>
+      </View>
+    );
+  }
+
   if (!me) {
+    if (joinBanned) {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.error}>{t('joinBanned')}</Text>
+          <KeycapButton variant="secondary" onPress={() => navigation.navigate('Home')}>
+            {t('gameRemovedHome')}
+          </KeycapButton>
+        </View>
+      );
+    }
     return (
       <View style={styles.root}>
         <View style={styles.soundToggleWrap}>
@@ -403,6 +521,8 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
           }}
+          onRemovePlayer={me.role === 'host' ? handleRemovePlayer : undefined}
+          removingPlayerId={removingPlayerId}
           copied={copied}
           t={t}
         />
@@ -478,12 +598,21 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
         />
       </View>
 
-      {/* Top overlay: round + question + timer floating near the top. */}
+      {/* Top overlay: scores (host kick) + round/question/timer. */}
       <View
         style={styles.overlayTop}
         pointerEvents="box-none"
         onLayout={(e) => setTopInset(e.nativeEvent.layout.height)}
       >
+        <ScoreBoard
+          players={players}
+          meId={me.id}
+          phase={game.phase}
+          isHost={me.role === 'host'}
+          onRemovePlayer={me.role === 'host' ? handleRemovePlayer : undefined}
+          removingPlayerId={removingPlayerId}
+          removeLabel={t('lobbyRemovePlayer')}
+        />
         <QuestionPanel {...sharedPanelProps} section="top" />
       </View>
 
@@ -518,6 +647,18 @@ export function GameScreen({ gameId, clientId, asHost }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    gap: 14,
+    backgroundColor: colors.bg,
+  },
+  error: { color: colors.wrong, fontSize: 15, textAlign: 'center' },
+  muted: { color: colors.textMuted, fontSize: 14 },
+  removedTitle: { color: colors.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  removedBody: { color: colors.textSecondary, fontSize: 15, textAlign: 'center', marginBottom: 8 },
   soundToggleWrap: {
     position: 'absolute',
     top: 8,
@@ -543,6 +684,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingLeft: 12,
     paddingRight: 4,
+    gap: 8,
     zIndex: 10,
   },
   overlayBottom: {
@@ -555,9 +697,6 @@ const styles = StyleSheet.create({
   },
   panelScroll: { flexGrow: 0 },
   panelContent: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 24, gap: 10 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, gap: 12 },
-  muted: { color: colors.textMuted },
-  error: { color: colors.wrong, textAlign: 'center' },
   headerRight: { flexDirection: 'row', alignItems: 'center' },
   headerBtn: { paddingHorizontal: 10 },
   headerBtnMuted: { color: colors.textMuted, fontSize: 12 },

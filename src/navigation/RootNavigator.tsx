@@ -15,6 +15,7 @@ import { parseGameIdFromLink } from '@/api/client';
 import { API_BASE_URL, LEGACY_API_BASE_URL } from '@/lib/config';
 import { debugLog } from '@/lib/debug-log';
 import { HomeScreen } from '@/screens/HomeScreen';
+import { PublicGamesScreen } from '@/screens/PublicGamesScreen';
 import { GameScreen } from '@/screens/GameScreen';
 import { PaywallScreen } from '@/screens/PaywallScreen';
 import { DebugScreen } from '@/screens/DebugScreen';
@@ -86,6 +87,11 @@ export function RootNavigator() {
           })}
         />
         <Stack.Screen
+          name="PublicGames"
+          component={PublicGamesScreen}
+          options={{ title: t('roomsTitle') }}
+        />
+        <Stack.Screen
           name="Paywall"
           component={PaywallScreen}
           options={{ title: t('paywallTitle'), presentation: 'modal' }}
@@ -97,8 +103,15 @@ export function RootNavigator() {
         />
         <Stack.Screen name="Game" options={{ title: t('gameTitle') }}>
           {(props) => {
-            const { gameId, asHost } = props.route.params;
-            return <GameScreen gameId={gameId} clientId={clientId} asHost={asHost} />;
+            const { gameId, asHost, autoJoin } = props.route.params;
+            return (
+              <GameScreen
+                gameId={gameId}
+                clientId={clientId}
+                asHost={asHost}
+                autoJoin={autoJoin}
+              />
+            );
           }}
         </Stack.Screen>
       </Stack.Navigator>

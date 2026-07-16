@@ -3,6 +3,8 @@
  *
  * Routes:
  *   POST /api/create-game      — server-side game creation (see createGame.ts)
+ *   GET  /api/public-games    — browse open public lobbies
+ *   POST /api/kick-player     — host remove + ban guest
  *   POST /api/generate-questions — rematch question regen (host only)
  *   POST /api/check-answer, GET /api/ice-servers
  * Base URL: EXPO_PUBLIC_API_BASE_URL (see lib/config.ts)
@@ -15,6 +17,8 @@ import { quotaRequestHeaders } from '@/api/quotaHeaders';
 
 export { createGame } from '@/api/createGame';
 export type { CreateGameResult } from '@/api/createGame';
+export { fetchPublicGames } from '@/api/publicGames';
+export { kickPlayer } from '@/api/kickPlayer';
 
 async function apiError(res: Response, fallback: string): Promise<never> {
   const body = (await res.json().catch(() => ({}))) as { error?: string };

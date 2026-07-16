@@ -67,6 +67,8 @@ export interface Game {
   phase_deadline: string | null;
   answer_correct: boolean | null;
   last_points: number | null;
+  /** Listed in Browse while waiting; cleared forever on host Start (Rule R1). */
+  is_public?: boolean;
 }
 
 export type WebRTCSignalType = 'offer' | 'answer' | 'ice-candidate';
@@ -87,4 +89,19 @@ export interface CreateGamePayload {
   cameras_enabled: boolean;
   locale: Locale;
   previous_questions?: string[];
+  /** Default false (Invite only ON). Send true only when Invite only is off. */
+  is_public?: boolean;
+}
+
+/** Directory row from GET /api/public-games — never includes questions/answers. */
+export interface PublicGameSummary {
+  id: string;
+  topic: string;
+  difficulty: Difficulty;
+  num_questions: number;
+  mc_mode: boolean;
+  game_mode: GameMode;
+  created_at: string;
+  player_count: number;
+  max_players: number;
 }

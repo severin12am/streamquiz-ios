@@ -608,6 +608,8 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
 
     await updateGame(g.id, {
       status: 'playing',
+      // Rule R1: permanently unlist so rematch cannot reappear in Browse.
+      is_public: false,
       current_question_index: 0,
       ...roundStartPatch({ ...g, current_question_index: 0, questions: sanitized }),
     });

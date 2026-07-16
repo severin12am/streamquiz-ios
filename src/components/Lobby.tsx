@@ -1,6 +1,14 @@
 /** Pre-game lobby: player list, QR + copy/share link (host), START when ≥2 players. */
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Share, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Share,
+  ActivityIndicator,
+  Pressable,
+} from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import type { Game, Player } from '@/lib/types';
 import { MAX_PLAYERS } from '@/lib/types';
@@ -19,6 +27,8 @@ interface Props {
   meId?: string;
   onStart: () => void;
   onCopyLink: () => void;
+  onRemovePlayer?: (player: Player) => void;
+  removingPlayerId?: string | null;
   copied: boolean;
   t: TranslateFn;
 }
@@ -32,11 +42,13 @@ export function Lobby({
   meId,
   onStart,
   onCopyLink,
+  onRemovePlayer,
+  removingPlayerId,
   copied,
   t,
 }: Props) {
-  void game;
   const emptySeats = Array.from({ length: Math.max(0, MAX_PLAYERS - players.length) }, (_, i) => i);
+  const listedPublicly = isHost && game.is_public === true && game.status === 'waiting';
 
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
@@ -46,28 +58,46 @@ export function Lobby({
           <Text style={styles.count}>
             {players.length} / {MAX_PLAYERS} {t('playersWord')}
           </Text>
+          {listedPublicly ? (
+            <Text style={styles.publicHint}>{t('lobbyListedPublicly')}</Text>
+          ) : null}
         </View>
 
         <View style={styles.list}>
-          {players.map((p) => (
-            <KeycapWell
-              key={p.id}
-              style={[styles.seatWell, p.id === meId ? styles.seatWellMe : null]}
-            >
-              <View style={styles.seatRow}>
-                <View style={[styles.avatar, { backgroundColor: playerColor(p.slot) }]}>
-                  <Text style={styles.avatarText}>{playerInitial(p.name)}</Text>
+          {players.map((p) => {
+            const canRemove =
+              isHost && p.role !== 'host' && p.id !== meId && Boolean(onRemovePlayer);
+            return (
+              <KeycapWell
+                key={p.id}
+                style={[styles.seatWell, p.id === meId ? styles.seatWellMe : null]}
+              >
+                <View style={styles.seatRow}>
+                  <View style={[styles.avatar, { backgroundColor: playerColor(p.slot) }]}>
+                    <Text style={styles.avatarText}>{playerInitial(p.name)}</Text>
+                  </View>
+                  <Text style={styles.seatName} numberOfLines={1}>
+                    {p.name}
+                  </Text>
+                  <View style={styles.seatTags}>
+                    {p.role === 'host' ? <Text style={styles.hostTag}>{t('host')}</Text> : null}
+                    {p.id === meId ? <Text style={styles.youTag}>({t('youPick')})</Text> : null}
+                    {canRemove ? (
+                      <Pressable
+                        onPress={() => onRemovePlayer?.(p)}
+                        disabled={removingPlayerId === p.id}
+                        hitSlop={8}
+                      >
+                        <Text style={styles.removeTag}>
+                          {removingPlayerId === p.id ? '…' : t('lobbyRemovePlayer')}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 </View>
-                <Text style={styles.seatName} numberOfLines={1}>
-                  {p.name}
-                </Text>
-                <View style={styles.seatTags}>
-                  {p.role === 'host' ? <Text style={styles.hostTag}>{t('host')}</Text> : null}
-                  {p.id === meId ? <Text style={styles.youTag}>({t('youPick')})</Text> : null}
-                </View>
-              </View>
-            </KeycapWell>
-          ))}
+              </KeycapWell>
+            );
+          })}
           {emptySeats.map((i) => (
             <KeycapWell key={`empty-${i}`} style={styles.seatWellEmpty}>
               <View style={styles.seatRow}>
@@ -145,6 +175,13 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', gap: 4 },
   title: { color: colors.text, fontSize: 24, fontWeight: '800' },
   count: { color: colors.textSecondary, fontSize: 14 },
+  publicHint: {
+    marginTop: 4,
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   list: { gap: 8 },
   seatWell: { paddingHorizontal: 12, paddingVertical: 9 },
   seatWellMe: { borderTopColor: colors.accent, borderLeftColor: colors.accent, borderRightColor: colors.accent },
@@ -162,6 +199,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   youTag: { color: colors.textMuted, fontSize: 11 },
+  removeTag: {
+    color: colors.wrong,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   emptyAvatar: {
     width: 28,
     height: 28,

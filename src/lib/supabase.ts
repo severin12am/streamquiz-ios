@@ -168,9 +168,23 @@ function nextFreeSlot(players: Player[], asHost: boolean): number | null {
   return null;
 }
 
+/** Raised when game_bans + players_reject_banned blocks the insert. */
+export class BannedFromGameError extends Error {
+  constructor(message = 'banned_from_game') {
+    super(message);
+    this.name = 'BannedFromGameError';
+  }
+}
+
+function isBannedInsertError(error: { code?: string; message?: string }): boolean {
+  const msg = (error.message ?? '').toLowerCase();
+  return msg.includes('banned_from_game') || msg.includes('banned from game');
+}
+
 /**
  * Take or reattach a seat. Returns null if game full or host seat taken.
  * Role comes from slot (0=host), not from who created the game row.
+ * Throws BannedFromGameError when the client is banned from this game.
  */
 export async function joinGame(
   gameId: string,
@@ -229,6 +243,9 @@ export async function joinGame(
       code: error.code,
       message: error.message,
     });
+    if (isBannedInsertError(error)) {
+      throw new BannedFromGameError(error.message);
+    }
     if (error.code === '23505') {
       const refreshed = await fetchPlayers(gameId);
       return refreshed.find((p) => p.client_id === clientId) ?? null;
