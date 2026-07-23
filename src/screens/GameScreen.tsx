@@ -26,6 +26,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Clipboard from 'expo-clipboard';
 import { gameShareUrl, generateQuestions, kickPlayer } from '@/api/client';
+import { reportMatchEndTelemetry } from '@/api/telemetry';
 import { mergePreviousQuestions, getPreviousQuestions, addQuestionsToHistory } from '@/lib/question-history';
 import { getSavedName, saveName } from '@/lib/client-id';
 import { speechLangFor } from '@/lib/i18n';
@@ -112,11 +113,8 @@ export function GameScreen({ gameId, clientId, asHost, autoJoin }: Props) {
   const throttleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const camerasEnabled = game?.cameras_enabled ?? false;
-  const { localStream, remoteStreams, startCamera, setMicEnabled, cameraError } = useMeshWebRTC(
-    gameId,
-    me?.id ?? null,
-    camerasEnabled,
-  );
+  const { localStream, remoteStreams, startCamera, setMicEnabled, cameraError, getMeshSummary } =
+    useMeshWebRTC(gameId, me?.id ?? null, camerasEnabled);
 
   const flushTranscript = useCallback(
     (text: string) => {
@@ -293,6 +291,37 @@ export function GameScreen({ gameId, clientId, asHost, autoJoin }: Props) {
   useEffect(() => {
     if (me?.id) void startCamera();
   }, [me?.id, startCamera]);
+
+  // Anonymous product telemetry (TELEMETRY_IOS.md §3): when the match reaches
+  // ended, the HOST ONLY reports game_finished + webrtc_summary exactly once.
+  // Guests never report. Fire-and-forget — reportMatchEndTelemetry swallows all
+  // errors so this can never block the winner screen. The guard resets when the
+  // game leaves 'ended' (rematch) so the NEXT finished match reports again, and
+  // the WebRTC mesh is still live here so getMeshSummary can classify each peer.
+  const endTelemetrySentRef = useRef(false);
+  useEffect(() => {
+    const ended = game?.phase === 'ended' || game?.status === 'ended';
+    if (!ended) {
+      endTelemetrySentRef.current = false;
+      return;
+    }
+    if (!game || !me || me.role !== 'host' || endTelemetrySentRef.current) return;
+    endTelemetrySentRef.current = true;
+
+    void (async () => {
+      const mesh = await getMeshSummary();
+      reportMatchEndTelemetry({
+        gameId: game.id,
+        difficulty: game.difficulty,
+        gameMode: game.game_mode,
+        mcMode: game.mc_mode,
+        camerasOn: game.cameras_enabled,
+        numQuestions: game.num_questions,
+        playerCount: players.length,
+        mesh,
+      });
+    })();
+  }, [game, me, players, getMeshSummary]);
 
   // Mic policy. Manual mute (MicToggle) always wins.
   //  - MC mode: regular voice chat — mic always open.

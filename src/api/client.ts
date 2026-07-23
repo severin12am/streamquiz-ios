@@ -110,7 +110,12 @@ function mergeIceServers(serverList: RTCIceServer[]): RTCIceServer[] {
 
 export async function fetchIceServers(): Promise<RTCIceServer[]> {
   try {
-    const res = await fetch(api('/api/ice-servers'), { cache: 'no-store' });
+    // X-WhoSmarter-Client lets the server attribute its sampled `ice_config_served`
+    // telemetry row to platform=ios (otherwise it defaults to web). See TELEMETRY_IOS.md §5.
+    const res = await fetch(api('/api/ice-servers'), {
+      cache: 'no-store',
+      headers: { 'X-WhoSmarter-Client': 'ios' },
+    });
     if (!res.ok) return EXTRA_RELAYS;
     const data = (await res.json()) as { iceServers?: RTCIceServer[] };
     return data.iceServers?.length ? mergeIceServers(data.iceServers) : EXTRA_RELAYS;

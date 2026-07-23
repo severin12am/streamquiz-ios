@@ -43,6 +43,26 @@ const RECONCILE_INTERVAL_MS = 3000;
 // reached 'connected', then got rebuilt). Outlast a flicker before destroying.
 const PRESENCE_GRACE_MS = 8000;
 
+/**
+ * Snapshot of the mesh at match end for anonymous telemetry (TELEMETRY_IOS.md §3.2).
+ * Contains only aggregate path classification + byte totals — never candidate
+ * strings, IPs, or SDP.
+ */
+export interface MeshSummary {
+  /** Peer connections in the mesh (one per remote participant). */
+  pairsTotal: number;
+  /** Connected via a direct path (selected candidate host/srflx/prflx). */
+  pairsP2p: number;
+  /** Connected through a TURN relay (selected local/remote candidate type = relay). */
+  pairsRelay: number;
+  /** ICE/connection failed, disconnected, or otherwise not classifiable. */
+  pairsFailed: number;
+  /** Sum of outbound-rtp bytesSent across peers (raw; caller rounds to buckets). */
+  bytesSent: number;
+  /** Sum of inbound-rtp bytesReceived across peers (raw; caller rounds to buckets). */
+  bytesRecv: number;
+}
+
 interface UseMeshWebRTCResult {
   localStream: MediaStream | null;
   remoteStreams: Map<string, MediaStream>;
@@ -50,6 +70,8 @@ interface UseMeshWebRTCResult {
   cameraError: string | null;
   startCamera: (force?: boolean) => Promise<void>;
   setMicEnabled: (enabled: boolean) => void;
+  /** Aggregate P2P/relay/failed + byte totals for match-end telemetry (host only). */
+  getMeshSummary: () => Promise<MeshSummary>;
 }
 
 type PeerState = {
@@ -125,6 +147,8 @@ type IceStatReport = {
   localCandidateId?: string;
   remoteCandidateId?: string;
   candidateType?: string; // 'host' | 'srflx' | 'prflx' | 'relay'
+  bytesSent?: number; // on outbound-rtp entries
+  bytesReceived?: number; // on inbound-rtp entries
 };
 
 /**
@@ -616,6 +640,73 @@ export function useMeshWebRTC(
     });
   }, []);
 
+  // Classify every live peer connection as p2p / relay / failed and sum RTP bytes,
+  // for the host's match-end webrtc_summary telemetry. Reads the SAME selected-pair
+  // logic as logSelectedCandidatePair (nominated/succeeded candidate-pair → its
+  // local/remote candidate types). Purely observational: never sends candidate
+  // strings, IPs, or SDP — only aggregate counts and byte totals. Wrapped so a
+  // getStats quirk on any RN-WebRTC build can never throw into gameplay.
+  const getMeshSummary = useCallback(async (): Promise<MeshSummary> => {
+    const peers = [...peersRef.current.values()];
+    let pairsP2p = 0;
+    let pairsRelay = 0;
+    let pairsFailed = 0;
+    let bytesSent = 0;
+    let bytesRecv = 0;
+
+    await Promise.all(
+      peers.map(async ({ pc }) => {
+        try {
+          const cs = pc.connectionState;
+          const stats = (await pc.getStats()) as unknown as {
+            forEach: (cb: (report: IceStatReport) => void) => void;
+          };
+          const byId = new Map<string, IceStatReport>();
+          let pair: IceStatReport | undefined;
+          stats.forEach((report) => {
+            byId.set(report.id, report);
+            const isActivePair =
+              report.type === 'candidate-pair' &&
+              (report.nominated === true ||
+                report.selected === true ||
+                report.state === 'succeeded');
+            if (isActivePair && (!pair || report.nominated === true)) pair = report;
+            if (report.type === 'outbound-rtp' && typeof report.bytesSent === 'number') {
+              bytesSent += report.bytesSent;
+            }
+            if (report.type === 'inbound-rtp' && typeof report.bytesReceived === 'number') {
+              bytesRecv += report.bytesReceived;
+            }
+          });
+
+          if (cs === 'failed' || cs === 'disconnected' || cs === 'closed') {
+            pairsFailed += 1;
+            return;
+          }
+          const local = pair?.localCandidateId ? byId.get(pair.localCandidateId) : undefined;
+          const remote = pair?.remoteCandidateId ? byId.get(pair.remoteCandidateId) : undefined;
+          const relayed =
+            local?.candidateType === 'relay' || remote?.candidateType === 'relay';
+          if (relayed) pairsRelay += 1;
+          else if (cs === 'connected') pairsP2p += 1;
+          else pairsFailed += 1; // connecting / new / unknown at end → count as failed
+        } catch {
+          // getStats unavailable / different shape on this build — count as failed.
+          pairsFailed += 1;
+        }
+      }),
+    );
+
+    return {
+      pairsTotal: peers.length,
+      pairsP2p,
+      pairsRelay,
+      pairsFailed,
+      bytesSent,
+      bytesRecv,
+    };
+  }, []);
+
   const lastRecoverAtRef = useRef(0);
 
   // Lifecycle recovery: iOS stops capture, suspends the signaling socket, and pauses
@@ -747,5 +838,6 @@ export function useMeshWebRTC(
     cameraError,
     startCamera,
     setMicEnabled,
+    getMeshSummary,
   };
 }
