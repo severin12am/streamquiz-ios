@@ -55,6 +55,7 @@ export function HomeScreen({ navigation }: Props) {
     cameras_enabled: boolean;
     is_public: boolean;
     answer_seconds: number;
+    source_text?: string;
   }) => {
     // Joining is always free; creating is gated. Check before spending any AI
     // tokens or inserting a row.
@@ -72,6 +73,7 @@ export function HomeScreen({ navigation }: Props) {
         ...params,
         locale,
         previous_questions: previous,
+        ...(params.source_text ? { source_text: params.source_text } : {}),
       });
       await addQuestionsToHistory(
         params.topic,

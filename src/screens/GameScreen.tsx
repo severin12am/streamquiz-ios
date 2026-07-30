@@ -30,6 +30,7 @@ import { reportMatchEndTelemetry } from '@/api/telemetry';
 import { mergePreviousQuestions, getPreviousQuestions, addQuestionsToHistory } from '@/lib/question-history';
 import { getSavedName, saveName } from '@/lib/client-id';
 import { speechLangFor } from '@/lib/i18n';
+import { isPdfTopic } from '@/lib/pdf-source';
 import { VOICE_ANSWERS_ENABLED } from '@/lib/features';
 import { containsProfanity } from '@/lib/profanity';
 import { useLocale } from '@/context/LocaleProvider';
@@ -243,9 +244,15 @@ export function GameScreen({ gameId, clientId, asHost, autoJoin }: Props) {
     rematchInFlight.current = true;
     setRematchLoading(true);
     void (async () => {
+      const pdfQuiz = isPdfTopic(game.topic);
       try {
         const allowance = await refresh();
         if (!allowance.allowed) {
+          if (pdfQuiz) {
+            // Match web: quota exhausted → replay same questions so the lobby can continue.
+            await rematch();
+            return;
+          }
           rematchInFlight.current = false;
           await updatePlayer(me.id, { rematch: false });
           navigation.navigate('Paywall', {
@@ -265,6 +272,7 @@ export function GameScreen({ gameId, clientId, asHost, autoJoin }: Props) {
           cameras_enabled: game.cameras_enabled,
           locale,
           previous_questions: merged,
+          ...(pdfQuiz ? { game_id: game.id } : {}),
         });
         await addQuestionsToHistory(
           game.topic,
@@ -277,11 +285,24 @@ export function GameScreen({ gameId, clientId, asHost, autoJoin }: Props) {
           await noteCreated();
         }
       } catch (e) {
-        rematchInFlight.current = false;
-        Alert.alert(
-          t('errorTitle'),
-          e instanceof Error ? e.message : t('errorRegenerateQuestions'),
-        );
+        if (pdfQuiz) {
+          // Missing source (409), generate failure, etc. → same questions (web parity).
+          try {
+            await rematch();
+          } catch {
+            rematchInFlight.current = false;
+            Alert.alert(
+              t('errorTitle'),
+              e instanceof Error ? e.message : t('errorRegenerateQuestions'),
+            );
+          }
+        } else {
+          rematchInFlight.current = false;
+          Alert.alert(
+            t('errorTitle'),
+            e instanceof Error ? e.message : t('errorRegenerateQuestions'),
+          );
+        }
       } finally {
         setRematchLoading(false);
       }

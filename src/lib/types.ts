@@ -95,6 +95,13 @@ export interface CreateGamePayload {
   is_public?: boolean;
   /** Seconds to answer (5–30). Defaults to 20 on server if omitted. */
   answer_seconds?: number;
+  /**
+   * PDF quiz excerpt (client-extracted, page/char capped).
+   * Create only — rematch uses game_id so the server loads games.source_text.
+   */
+  source_text?: string;
+  /** Rematch only — load stored PDF source_text for this game. */
+  game_id?: string;
 }
 
 /** Directory row from GET /api/public-games — never includes questions/answers. */

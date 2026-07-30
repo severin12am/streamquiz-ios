@@ -42,7 +42,13 @@ export async function createGame(
   payload: CreateGamePayload,
 ): Promise<CreateGameResult> {
   const url = api('/api/create-game');
-  debugLog('api', 'create-game', 'POST', { url, topic: payload.topic });
+  const hasSource = Boolean(payload.source_text?.trim());
+  debugLog('api', 'create-game', 'POST', {
+    url,
+    topic: payload.topic,
+    source_text: hasSource,
+    source_chars: hasSource ? payload.source_text!.trim().length : 0,
+  });
 
   const res = await fetch(url, {
     method: 'POST',
@@ -61,6 +67,7 @@ export async function createGame(
       previous_questions: payload.previous_questions,
       is_public: payload.is_public === true,
       answer_seconds: clampAnswerSeconds(payload.answer_seconds),
+      ...(hasSource ? { source_text: payload.source_text!.trim() } : {}),
     }),
   });
 

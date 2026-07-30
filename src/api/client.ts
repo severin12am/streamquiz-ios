@@ -39,10 +39,18 @@ export interface GenerateQuestionsResult {
 /** Rematch only — host regenerates questions for an existing game row. */
 export async function generateQuestions(payload: CreateGamePayload): Promise<GenerateQuestionsResult> {
   const url = api('/api/generate-questions');
-  debugLog('api', 'generate', 'POST', { url, topic: payload.topic });
+  const pdfRematch = Boolean(payload.game_id);
+  debugLog('api', 'generate', 'POST', {
+    url,
+    topic: payload.topic,
+    game_id: pdfRematch,
+  });
   const res = await fetch(url, {
     method: 'POST',
-    headers: await quotaRequestHeaders({ 'Content-Type': 'application/json' }),
+    headers: await quotaRequestHeaders({
+      'Content-Type': 'application/json',
+      'X-WhoSmarter-Client': 'ios',
+    }),
     body: JSON.stringify({
       topic: payload.topic.slice(0, 200),
       difficulty: payload.difficulty,
@@ -51,6 +59,7 @@ export async function generateQuestions(payload: CreateGamePayload): Promise<Gen
       game_mode: payload.game_mode,
       locale: payload.locale,
       previous_questions: payload.previous_questions,
+      ...(pdfRematch ? { game_id: payload.game_id } : {}),
     }),
   });
 

@@ -17,6 +17,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { fetchPublicGames } from '@/api/client';
 import { useLocale } from '@/context/LocaleProvider';
 import { playSound } from '@/lib/sounds';
+import { displayPdfTopic } from '@/lib/pdf-source';
 import type { PublicGameSummary } from '@/lib/types';
 import type { RootStackParamList } from '@/navigation/types';
 import { colors } from '@/theme';
@@ -124,7 +125,7 @@ export function PublicGamesScreen({ navigation }: Props) {
             <View style={styles.row}>
               <View style={styles.rowBody}>
                 <Text style={styles.topic} numberOfLines={2}>
-                  {item.topic}
+                  {displayPdfTopic(item.topic)}
                 </Text>
                 <Text style={styles.meta}>
                   {t('roomsPlayers')
