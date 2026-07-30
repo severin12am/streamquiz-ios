@@ -14,6 +14,9 @@ import {
   type PdfSource,
 } from '@/lib/pdf-source';
 
+/** Below this much extracted text a PDF is treated as a scan we cannot use. */
+export const MIN_PDF_TEXT_CHARS = 40;
+
 export class PdfExtractError extends Error {
   constructor(
     message: string,
@@ -104,16 +107,19 @@ export async function extractPdfSource(args: {
     }
   }
 
-  let text = truncatePdfText(pageTexts.join('\n\n'));
-  if (totalPages > usedPages) {
-    text = `${text}\n\n[Quiz uses the first ${usedPages} of ${totalPages} pages.]`;
-  }
-
-  if (text.replace(/\s+/g, ' ').trim().length < 40) {
+  // Gate on the extracted text ALONE. The page note below is ~38-40 chars, so
+  // measuring after appending it would let an image-only scan through.
+  const merged = pageTexts.join('\n\n');
+  if (merged.replace(/\s+/g, ' ').trim().length < MIN_PDF_TEXT_CHARS) {
     throw new PdfExtractError(
       'Could not read enough text from that PDF. Try a text-based PDF (not a scanned image).',
       'not_enough_text',
     );
+  }
+
+  let text = truncatePdfText(merged);
+  if (totalPages > usedPages) {
+    text = `${text}\n\n[Quiz uses the first ${usedPages} of ${totalPages} pages.]`;
   }
 
   return {

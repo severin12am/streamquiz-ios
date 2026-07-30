@@ -167,7 +167,8 @@ interface UseGameStateResult {
   updateTranscript: (text: string) => Promise<void>;
   finishAnswer: (text?: string) => Promise<void>;
   voteRematch: () => Promise<void>;
-  rematch: (questions?: Question[]) => Promise<void>;
+  /** False when the vote guard rejected the attempt and nothing was written. */
+  rematch: (questions?: Question[]) => Promise<boolean>;
 }
 
 // MARK: - useGameState hook
@@ -728,12 +729,12 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
     async (questions?: Question[]) => {
       const g = gameRef.current;
       const self = meRef.current;
-      if (!g || !self || self.role !== 'host') return;
+      if (!g || !self || self.role !== 'host') return false;
 
       const list = await fetchPlayers(g.id);
       const hostVoted = list.find((p) => p.role === 'host')?.rematch;
       const guestVotes = list.filter((p) => p.role === 'player' && p.rematch).length;
-      if (!hostVoted || guestVotes < 1) return;
+      if (!hostVoted || guestVotes < 1) return false;
 
       const nextQuestions = questions ?? g.questions;
       await resetPlayersRematch(g.id);
@@ -749,6 +750,7 @@ export function useGameState(gameId: string, clientId: string): UseGameStateResu
       });
       await resetPlayersForRound(g.id);
       await refreshPlayers();
+      return true;
     },
     [refreshPlayers],
   );

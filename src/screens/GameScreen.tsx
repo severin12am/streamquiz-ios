@@ -249,8 +249,28 @@ export function GameScreen({ gameId, clientId, asHost, autoJoin }: Props) {
         const allowance = await refresh();
         if (!allowance.allowed) {
           if (pdfQuiz) {
-            // Match web: quota exhausted → replay same questions so the lobby can continue.
-            await rematch();
+            // Match web: quota exhausted → replay same questions so the lobby
+            // can continue. Say so, and still offer the upgrade.
+            if (!(await rematch())) {
+              rematchInFlight.current = false;
+              return;
+            }
+            Alert.alert(
+              allowance.tier === 'free'
+                ? t('paywallTrialEnded')
+                : t('paywallMonthlyReached'),
+              t('pdfRematchSameQuestions'),
+              [
+                { text: t('ok'), style: 'cancel' },
+                {
+                  text: t('seePlans'),
+                  onPress: () =>
+                    navigation.navigate('Paywall', {
+                      reason: allowance.tier === 'free' ? 'trial' : 'monthly',
+                    }),
+                },
+              ],
+            );
             return;
           }
           rematchInFlight.current = false;
@@ -278,7 +298,7 @@ export function GameScreen({ gameId, clientId, asHost, autoJoin }: Props) {
           game.topic,
           questions.map((q) => q.question),
         );
-        await rematch(questions);
+        if (!(await rematch(questions))) rematchInFlight.current = false;
         if (quota) {
           await applyQuotaSnapshot(quota);
         } else {
@@ -287,22 +307,19 @@ export function GameScreen({ gameId, clientId, asHost, autoJoin }: Props) {
       } catch (e) {
         if (pdfQuiz) {
           // Missing source (409), generate failure, etc. → same questions (web parity).
-          try {
-            await rematch();
-          } catch {
-            rematchInFlight.current = false;
-            Alert.alert(
-              t('errorTitle'),
-              e instanceof Error ? e.message : t('errorRegenerateQuestions'),
-            );
+          const replayed = await rematch().catch(() => false);
+          if (replayed) {
+            Alert.alert(t('rematch'), t('pdfRematchFallback'));
+            return;
           }
-        } else {
-          rematchInFlight.current = false;
-          Alert.alert(
-            t('errorTitle'),
-            e instanceof Error ? e.message : t('errorRegenerateQuestions'),
-          );
         }
+        // Nothing was written, so release the guard or the host can never
+        // retry from this ended screen.
+        rematchInFlight.current = false;
+        Alert.alert(
+          t('errorTitle'),
+          e instanceof Error ? e.message : t('errorRegenerateQuestions'),
+        );
       } finally {
         setRematchLoading(false);
       }

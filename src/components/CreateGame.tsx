@@ -132,6 +132,12 @@ export function CreateGame({ onCreate, onBrowseOpenGames, t }: Props) {
 
   const handleCreate = async () => {
     if (pdfSource) {
+      // The filename becomes games.topic and is shown in Browse for public
+      // lobbies, so it needs the same filter as a typed topic.
+      if (containsProfanity(pdfSource.fileName)) {
+        Alert.alert(t('errorTitle'), t('inappropriateLanguage'));
+        return;
+      }
       playSound('click');
       setLoading(true);
       try {
